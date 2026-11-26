@@ -65,6 +65,7 @@ $inAdmin   = isset($adminPage);
           'camps'     => ['Camps & Pricing', 'admin/camps.php'],
           'players'   => ['Players & Verification', 'admin/players.php'],
           'reports'   => ['Reports & Rosters', 'admin/reports.php'],
+          'emails'    => ['Emails', 'admin/emails.php'],
           'levels'    => ['Levels of Play', 'admin/levels.php'],
           'settings'  => ['Settings', 'admin/settings.php'],
       ];

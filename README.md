@@ -14,6 +14,8 @@ A self-contained camp registration system for players, with an admin back office
 
 Players can log back in, see their camps and verification status, edit their info and add more camps later.
 
+**Forgot password.** The login page has a "Forgot your password?" link. It emails a one-time reset link that expires after 60 minutes. Using the link also cancels any other outstanding reset links for that account. The form shows the same message whether or not the email has an account, so it can't be used to find out who is registered. Requests are rate-limited to 3 per account per hour and 5 per browser session per hour.
+
 **Admin side** (`/admin/`)
 
 - **Dashboard.** Registrations, revenue, how full each camp is, players waiting for verification and recent orders.
@@ -25,6 +27,13 @@ Players can log back in, see their camps and verification status, edit their inf
   - Cancel or restore registrations, and reset the player's password.
 - **Auto-check pending (10).** Checks pending players in batches of 10.
 - **Reports & Rosters.** A printable roster for each camp, or all camps with one camp per page. Rosters have an attendance column and can be sorted by name, level, position, age or verification. There is also a level-of-play mix for each camp and CSV export (rosters, all registrations, all players).
+- **Emails.**
+  - **Built-in templates:** *Registration accepted*, *Registration denied* and *Password reset*. You can edit the wording of all three, and "Restore default wording" puts the original text back.
+  - **Custom templates:** create, edit and delete as many as you like, for example camp reminders or schedule changes.
+  - **Placeholders:** `{greeting_name}`, `{player_name}`, `{camp_list}`, `{level}`, `{verification_note}`, `{camp_name}`, `{login_link}` and more. Click one to insert it into the subject or message. The editor previews the email using a sample player.
+  - **Automatic accepted/denied emails:** when you mark a player **Verified** or **Rejected**, a ticked checkbox sends *Registration accepted* or *Registration denied*. Players under 18 have their parent/guardian copied in. Your verification note fills `{verification_note}`.
+  - **Send an email:** to one player, everyone in a camp, all registered players, or players with a given verification status. You can start from any template and adjust it for that one send.
+  - **Sent log:** every email is recorded with its status (sent, failed or log-only), and you can open each one to see exactly what was sent. A player's page also lists the emails sent to them.
 - **Levels of Play.** Edit the tiers players choose from, their rank, and the league keywords the verifier looks for.
 - **Settings.** Organization name, contact email, logo URL, currency, waiver text, opening or closing registration, administrator accounts and changing your password.
 
@@ -42,6 +51,7 @@ Players can log back in, see their camps and verification status, edit their inf
 4. Browse to `https://your-site/install/` (or `https://your-site/register/install/`) and fill in:
    - the database host, port, name, user and password
    - the organization name, contact email and timezone
+   - how email is sent: the server's default PHP mail(), an SMTP server, or "don't send" for demos
    - the first administrator's email and password
    - whether to load 5 sample camps
 5. **Delete the `install/` folder** when the installer has finished.
@@ -78,6 +88,10 @@ location ~ ^/(includes|install/.*\.sql) { deny all; }
 location ~ /config\.php$ { deny all; }
 ```
 
+## Upgrading an existing install
+
+Upload the new files over the old ones, but keep your `config.php`. Database changes are applied automatically the first time any page loads. To use the new email features, add the `'mail'` section from `config.sample.php` to your `config.php`. If you don't, emails are sent with PHP `mail()`.
+
 ## Matching the main website's look
 
 All colors and fonts are CSS variables at the top of `assets/css/style.css`:
@@ -91,6 +105,22 @@ All colors and fonts are CSS variables at the top of `assets/css/style.css`:
 ```
 
 To use the real logo, either replace `assets/img/logo.svg` or set **Admin → Settings → Logo image URL**. The Google Fonts link is in `includes/header.php`.
+
+## Email setup
+
+Email delivery is set in the `'mail'` section of `config.php`. The installer fills it in for you.
+
+| `transport` | Use when |
+|---|---|
+| `mail` | Your host supports PHP `mail()`. This is the default on most shared hosting. |
+| `smtp` | Mail should go through a real mail server, such as Gmail or Google Workspace (`smtp.gmail.com`, port 587, TLS, using an app password), Microsoft 365 (`smtp.office365.com`, port 587, TLS), your host's mail server, or SendGrid/Mailgun. This is the most reliable option and the least likely to land in spam. |
+| `log` | You're running a demo. Nothing is sent, but every email (including password reset links) appears in **Admin → Emails → Sent log**, so you can test the full flow. |
+
+After changing these settings, use **Admin → Settings → Send test email to me** to check that delivery works.
+
+Links in emails (password reset, login) use the **Site URL** under Admin → Settings. The installer sets it automatically. Update it if you move the system to a different address.
+
+For best deliverability, set `from_email` to an address on your own domain and add SPF/DKIM records for that domain with your host.
 
 ## How the level verifier works
 
@@ -123,8 +153,9 @@ Demo mode is controlled by `'demo_mode' => true` in `config.php`. To take real p
 index.php            Public landing page with camp list
 register.php         5-step registration wizard
 login.php / logout.php / account.php / confirmation.php
-admin/               Dashboard, camps, players, verification, reports, rosters, CSV, levels, settings
-includes/            Bootstrap, DB, auth, helpers, verifier, layout (blocked from the web)
+forgot_password.php / reset_password.php
+admin/               Dashboard, camps, players, verification, reports, rosters, CSV, emails, levels, settings
+includes/            Bootstrap, DB, auth, helpers, verifier, mailer, migrations, layout (blocked from the web)
 install/             Web installer + SQL schema and seed data (delete after install)
 assets/              CSS, JS, logo
 config.sample.php    Configuration template
@@ -137,4 +168,5 @@ config.sample.php    Configuration template
 - All output is escaped.
 - Logins are throttled, and the session ID is regenerated on login.
 - CSV exports are guarded against spreadsheet formula injection.
+- Password reset tokens are random 256-bit values. Only a SHA-256 hash of each token is stored, and each one expires after 60 minutes and works once.
 - Serve the site over **HTTPS**. The session cookie is marked `Secure` automatically when HTTPS is used.

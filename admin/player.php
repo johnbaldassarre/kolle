@@ -47,7 +47,15 @@ if (is_post()) {
             db()->prepare('UPDATE players SET verification_status = ?, verification_note = ?, verified_by = ?, verified_at = ?, level_id = COALESCE(NULLIF(?, 0), level_id)
                            WHERE user_id = ?')
                 ->execute([$status, $note ?: null, $status === 'pending' ? null : $admin['id'], $status === 'pending' ? null : date('Y-m-d H:i:s'), $level, $id]);
-            flash('success', 'Verification saved.');
+            $msg = 'Verification saved.';
+            $tplKey = ['verified' => 'registration_accepted', 'rejected' => 'registration_denied'][$status] ?? null;
+            if ($tplKey && !empty($_POST['notify']) && ($tpl = email_template($tplKey))) {
+                $res = email_send_to_user($id, $tpl, ['cc_parent' => true, 'sent_by' => $admin['id']]);
+                $msg .= $res['ok']
+                    ? ' "' . $tpl['name'] . '" email ' . ($res['status'] === 'logged' ? 'recorded (log-only mode).' : 'sent.')
+                    : ' The email could not be sent: ' . $res['error'];
+            }
+            flash(isset($res) && !$res['ok'] ? 'error' : 'success', $msg);
         }
     } elseif ($action === 'cancel_reg') {
         db()->prepare('UPDATE registrations SET status = "cancelled" WHERE id = ? AND user_id = ?')->execute([(int)$_POST['reg_id'], $id]);
@@ -73,6 +81,10 @@ $stmt = db()->prepare('SELECT r.*, c.name, c.start_date, c.end_date, o.order_num
 $stmt->execute([$id]);
 $regs = $stmt->fetchAll();
 
+$stmt = db()->prepare('SELECT l.id, l.subject, l.status, l.created_at, l.to_email, l.cc_email FROM email_log l WHERE l.user_id = ? ORDER BY l.id DESC LIMIT 20');
+$stmt->execute([$id]);
+$emails = $stmt->fetchAll();
+
 $check = $p['auto_check_result'] ? json_decode($p['auto_check_result'], true) : null;
 $age = age_from_birthdate($p['birthdate']);
 
@@ -82,7 +94,10 @@ require __DIR__ . '/../includes/header.php';
 ?>
 <div class="page-head">
   <h1 class="page-title"><?= e($p['first_name'] . ' ' . $p['last_name']) ?> <?= verification_badge($p['verification_status']) ?></h1>
-  <a class="btn btn-ghost" href="<?= e(url('admin/players.php')) ?>">&larr; All players</a>
+  <div class="head-actions">
+    <a class="btn btn-ghost" href="<?= e(url('admin/email_compose.php?player=' . $id)) ?>">&#9993; Send email</a>
+    <a class="btn btn-ghost" href="<?= e(url('admin/players.php')) ?>">&larr; All players</a>
+  </div>
 </div>
 
 <div class="grid-2 cards">
@@ -180,8 +195,13 @@ require __DIR__ . '/../includes/header.php';
           <?php foreach (levels(false) as $l): ?><option value="<?= (int)$l['id'] ?>"<?= selected($p['level_id'], $l['id']) ?>><?= e($l['name']) ?></option><?php endforeach; ?>
         </select>
       </label>
-      <label>Note (internal)<input name="verification_note" value="<?= e($p['verification_note']) ?>" placeholder="e.g. Confirmed on EP – 2025-26 OJHL"></label>
+      <label>Note<input name="verification_note" value="<?= e($p['verification_note']) ?>" placeholder="e.g. Confirmed on EP – 2025-26 OJHL">
+        <span class="hint">Included in emails that use {verification_note} (e.g. Registration denied).</span></label>
     </div>
+    <label class="checkbox notify-box" data-notify hidden><input type="checkbox" name="notify" value="1" checked>
+      <span data-notify-label="verified">Email the player the <strong>Registration accepted</strong> message<?= !$p['is_adult'] && $p['parent_email'] ? ' (cc parent/guardian)' : '' ?></span>
+      <span data-notify-label="rejected">Email the player the <strong>Registration denied</strong> message<?= !$p['is_adult'] && $p['parent_email'] ? ' (cc parent/guardian)' : '' ?></span>
+      <a href="<?= e(url('admin/emails.php')) ?>" class="small-link">edit wording</a></label>
     <div class="form-actions">
       <span class="muted"><?php if ($p['verified_at']): ?>Last decision by <?= e($p['vb_first'] . ' ' . $p['vb_last']) ?> on <?= e(fmt_date($p['verified_at'], 'M j, Y g:i a')) ?><?php endif; ?></span>
       <button class="btn btn-primary">Save decision</button>
@@ -214,7 +234,19 @@ require __DIR__ . '/../includes/header.php';
     <?php endif; ?>
   </div>
   <div class="card">
-    <h2>Account</h2>
+    <div class="card-head"><h2>Emails</h2><a class="btn btn-ghost btn-sm" href="<?= e(url('admin/email_compose.php?player=' . $id)) ?>">Send email</a></div>
+    <?php if (!$emails): ?><p class="muted">No emails sent to this player yet.</p><?php else: ?>
+    <table class="table compact">
+      <tbody>
+      <?php foreach ($emails as $m): ?>
+        <tr><td><a href="<?= e(url('admin/email_view.php?id=' . $m['id'])) ?>"><?= e($m['subject']) ?></a><br><small class="muted"><?= e(fmt_date($m['created_at'], 'M j, Y g:i a')) ?></small></td>
+          <td><?= email_status_badge($m['status']) ?></td></tr>
+      <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endif; ?>
+    <hr>
+    <h3 style="margin-top:0">Account</h3>
     <form method="post" class="inline-form">
       <?= csrf_field() ?><input type="hidden" name="action" value="set_password">
       <label>Set a new password for this player<input type="text" name="new_password" autocomplete="off" placeholder="New password"></label>

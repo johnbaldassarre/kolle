@@ -34,6 +34,7 @@ $qs = fn(array $over) => e(url('admin/roster.php?' . http_build_query(array_merg
     <a href="<?= $qs(['contacts' => $contacts ? '0' : '1']) ?>" class="pill"><?= $contacts ? 'Hide' : 'Show' ?> contacts</a>
     <button class="btn btn-primary" onclick="window.print()">Print</button>
     <?php if ($campParam !== 'all'): ?><a class="btn btn-ghost" href="<?= e(url('admin/export.php?type=roster&camp=' . (int)$campParam)) ?>">CSV</a><?php endif; ?>
+    <?php if ($campParam !== 'all'): ?><a class="btn btn-ghost" href="<?= e(url('admin/email_compose.php?camp=' . (int)$campParam)) ?>">Email camp</a><?php endif; ?>
   </div>
 </div>
 

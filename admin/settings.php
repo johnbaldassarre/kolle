@@ -2,7 +2,7 @@
 require __DIR__ . '/../includes/bootstrap.php';
 $me = require_admin();
 
-$keys = ['site_name', 'contact_email', 'main_site_url', 'logo_url', 'currency_symbol', 'currency_code', 'waiver_text'];
+$keys = ['site_name', 'site_url', 'contact_email', 'main_site_url', 'logo_url', 'currency_symbol', 'currency_code', 'waiver_text'];
 
 if (is_post()) {
     csrf_check();
@@ -13,6 +13,14 @@ if (is_post()) {
         }
         save_setting('registration_open', !empty($_POST['registration_open']) ? '1' : '0');
         flash('success', 'Settings saved.');
+    } elseif ($action === 'test_email') {
+        $res = mail_deliver($me['email'], $me['first_name'], null, 'Test email from ' . site_name(),
+            "This is a test email from your registration system.\n\nIf you can read this, email delivery is working.\n\n" . absolute_url('admin/'));
+        db()->prepare('INSERT INTO email_log (user_id, to_email, subject, body, status, error, sent_by) VALUES (?,?,?,?,?,?,?)')
+            ->execute([$me['id'], $me['email'], 'Test email from ' . site_name(), 'Test email', $res['status'], $res['error'], $me['id']]);
+        flash($res['ok'] ? 'success' : 'error', $res['ok']
+            ? ($res['status'] === 'logged' ? 'Log-only mode: the test was recorded in Emails > Sent log but not sent.' : 'Test email sent to ' . $me['email'] . '. Check your inbox (and spam).')
+            : 'Test email failed: ' . $res['error']);
     } elseif ($action === 'add_admin') {
         $email = strtolower(trim($_POST['email'] ?? ''));
         $pw = (string)($_POST['password'] ?? '');
@@ -65,6 +73,7 @@ require __DIR__ . '/../includes/header.php';
   <div class="grid-2">
     <label>Organization name<input name="site_name" value="<?= e(setting('site_name')) ?>"></label>
     <label>Contact email<input type="email" name="contact_email" value="<?= e(setting('contact_email')) ?>"></label>
+    <label>Site URL (for links in emails)<input type="url" name="site_url" value="<?= e(setting('site_url')) ?>" placeholder="https://register.example.com/"><span class="hint">The address of this registration system. Used for password reset and login links.</span></label>
     <label>Main website URL<input type="url" name="main_site_url" value="<?= e(setting('main_site_url')) ?>" placeholder="https://www.tykollehockeydevelopment.com/"></label>
     <label>Logo image URL<input name="logo_url" value="<?= e(setting('logo_url')) ?>" placeholder="Leave blank to use assets/img/logo.svg"><span class="hint">A wide logo works best (about 200×60 px).</span></label>
     <label>Currency symbol<input name="currency_symbol" value="<?= e(setting('currency_symbol', '$')) ?>" class="w-sm"></label>
@@ -74,6 +83,18 @@ require __DIR__ . '/../includes/header.php';
   <label class="checkbox"><input type="checkbox" name="registration_open" value="1"<?= checked(setting('registration_open', '1') === '1') ?>><span>Registration is open to the public</span></label>
   <div class="form-actions"><span class="muted">Demo mode is <?= !empty($GLOBALS['config']['demo_mode']) ? '<strong>on</strong>' : 'off' ?> (set in config.php).</span><button class="btn btn-primary">Save settings</button></div>
 </form>
+
+<?php $mc = mail_config(); ?>
+<div class="card">
+  <div class="card-head"><h2>Email delivery</h2>
+    <form method="post"><?= csrf_field() ?><input type="hidden" name="action" value="test_email"><button class="btn btn-ghost btn-sm">Send test email to me</button></form></div>
+  <dl class="details">
+    <dt>Method</dt><dd><?= e(['mail' => 'PHP mail() (server default)', 'smtp' => 'SMTP', 'log' => 'Log only – emails are recorded, not sent'][$mc['transport']] ?? $mc['transport']) ?></dd>
+    <?php if ($mc['transport'] === 'smtp'): ?><dt>SMTP server</dt><dd><?= e($mc['smtp_host'] . ':' . $mc['smtp_port'] . ' (' . ($mc['smtp_secure'] ?: 'no encryption') . ')') ?></dd><?php endif; ?>
+    <dt>From</dt><dd><?= e(($mc['from_name'] ?: site_name()) . ' <' . ($mc['from_email'] ?: setting('contact_email')) . '>') ?></dd>
+  </dl>
+  <p class="muted"><small>Change these in the <code>'mail'</code> section of config.php. Email templates are under <a href="<?= e(url('admin/emails.php')) ?>">Emails</a>.</small></p>
+</div>
 
 <div class="grid-2 cards">
   <div class="card">

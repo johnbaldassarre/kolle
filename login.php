@@ -33,8 +33,8 @@ require __DIR__ . '/includes/header.php';
   <?php if ($error): ?><div class="alert alert-error"><?= e($error) ?></div><?php endif; ?>
   <label>Email<input type="email" name="email" value="<?= old('email') ?>" required autofocus autocomplete="email"></label>
   <label>Password<input type="password" name="password" required autocomplete="current-password"></label>
+  <p class="forgot-link"><a href="<?= e(url('forgot_password.php')) ?>">Forgot your password?</a></p>
   <button class="btn btn-primary btn-block">Log In</button>
-  <p class="muted center">New player? <a href="<?= e(url('register.php')) ?>">Create an account</a><br>
-  Forgot your password? Contact <a href="mailto:<?= e(setting('contact_email')) ?>"><?= e(setting('contact_email')) ?></a></p>
+  <p class="muted center">New player? <a href="<?= e(url('register.php')) ?>">Create an account</a></p>
 </form>
 <?php require __DIR__ . '/includes/footer.php'; ?>

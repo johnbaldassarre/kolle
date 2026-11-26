@@ -51,6 +51,7 @@ require __DIR__ . '/../includes/header.php';
           <a href="<?= e(url('admin/roster.php?camp=' . $c['id'])) ?>">View / print</a>
           <a href="<?= e(url('admin/export.php?type=roster&camp=' . $c['id'])) ?>">CSV</a>
           <a href="<?= e(url('admin/players.php?camp=' . $c['id'])) ?>">Verify</a>
+          <a href="<?= e(url('admin/email_compose.php?camp=' . $c['id'])) ?>">Email</a>
         </td>
       </tr>
     <?php endforeach; ?>

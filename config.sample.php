@@ -26,6 +26,18 @@ return [
     // Timezone used for dates and age calculations.
     'timezone' => 'America/Toronto',
 
+    // Email delivery (password resets, registration accepted/denied, custom emails)
+    'mail' => [
+        'transport'   => 'mail',   // 'mail' = PHP mail(), 'smtp' = mail server below, 'log' = don't send (demo)
+        'from_email'  => '',       // e.g. 'no-reply@yourdomain.com' (blank = contact email from Settings)
+        'from_name'   => '',       // blank = organization name
+        'smtp_host'   => '',       // e.g. 'smtp.gmail.com', 'smtp.office365.com', 'mail.yourdomain.com'
+        'smtp_port'   => 587,      // 587 for tls, 465 for ssl
+        'smtp_secure' => 'tls',    // 'tls', 'ssl' or ''
+        'smtp_user'   => '',
+        'smtp_pass'   => '',
+    ],
+
     // Show PHP errors in the browser. Keep false in production.
     'debug' => false,
 ];

@@ -38,12 +38,9 @@ function login_user(int $userId): void
 
 function logout_user(): void
 {
+    // Wipe the session and move to a fresh session ID (so a flash message can still be shown).
     $_SESSION = [];
-    if (ini_get('session.use_cookies')) {
-        $p = session_get_cookie_params();
-        setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
-    }
-    session_destroy();
+    session_regenerate_id(true);
 }
 
 /** Returns the user row on success, null on failure. */

@@ -107,18 +107,17 @@ function flashes(): array
 
 function setting(string $key, string $default = ''): string
 {
-    static $cache = null;
-    if ($cache === null) {
-        $cache = [];
+    if (!isset($GLOBALS['__settings'])) {
+        $GLOBALS['__settings'] = [];
         try {
             foreach (db()->query('SELECT setting_key, setting_value FROM settings') as $row) {
-                $cache[$row['setting_key']] = (string)$row['setting_value'];
+                $GLOBALS['__settings'][$row['setting_key']] = (string)$row['setting_value'];
             }
         } catch (Throwable $e) {
             // settings table missing: fall back to defaults
         }
     }
-    return $cache[$key] ?? $default;
+    return $GLOBALS['__settings'][$key] ?? $default;
 }
 
 function save_setting(string $key, string $value): void
@@ -126,6 +125,30 @@ function save_setting(string $key, string $value): void
     $stmt = db()->prepare('INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
                            ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)');
     $stmt->execute([$key, $value]);
+    $GLOBALS['__settings'][$key] = $value;
+}
+
+/**
+ * Absolute URL for links in emails. Uses the saved Site URL (Admin > Settings)
+ * rather than the request's Host header, so reset links cannot be spoofed.
+ */
+function absolute_url(string $path = ''): string
+{
+    $base = $GLOBALS['config']['base_url'] ?? '';
+    if ($base === '' || !preg_match('#^https?://#', $base)) {
+        $base = setting('site_url', '');
+    }
+    if ($base === '') {
+        $base = request_origin() . base_url();
+    }
+    return rtrim($base, '/') . '/' . ltrim($path, '/');
+}
+
+function request_origin(): string
+{
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https';
+    $host = preg_replace('/[^A-Za-z0-9.\-:\[\]]/', '', $_SERVER['HTTP_HOST'] ?? 'localhost');
+    return ($https ? 'https' : 'http') . '://' . $host;
 }
 
 function site_name(): string
