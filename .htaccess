@@ -1,0 +1,8 @@
+# Ty Kolle Hockey Development - Registration System
+Options -Indexes
+DirectoryIndex index.php
+
+# Never serve configuration or library files directly
+<FilesMatch "^(config\.php|config\.sample\.php|.*\.sql|.*\.lock|.*\.md)$">
+    Require all denied
+</FilesMatch>
