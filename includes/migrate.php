@@ -6,7 +6,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 function run_migrations(PDO $pdo): void
 {
@@ -85,6 +85,13 @@ function run_migrations(PDO $pdo): void
         $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('waiver_version', '1')");
         // The wizard gained a Waiver step (4); Camps moved to 5 and Checkout to 6.
         $pdo->exec('UPDATE players SET wizard_step = wizard_step + 1 WHERE wizard_step >= 5');
+    }
+
+    if ($current < 4) {
+        // ---- v4: note on registrations (camp moves) ----------------------------
+        if (!migrate_column_exists($pdo, 'registrations', 'note')) {
+            $pdo->exec("ALTER TABLE registrations ADD COLUMN note VARCHAR(255) NULL AFTER status");
+        }
     }
 
     $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('schema_version', ?)

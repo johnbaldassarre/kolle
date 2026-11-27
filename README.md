@@ -39,7 +39,11 @@ Players can log back in, see their camps and verification status, edit their inf
     - It **cancels all of their camp registrations**, which frees the spots. The confirmation shows the refund amount due.
     - It stops them registering for more camps.
     - The rejection can't be cleared by the player editing their profile. Only an admin can change the status.
-  - When restoring a cancelled registration, the camp's capacity is checked first.
+  - **Lowering a player's level:** if the new level is below a camp the player is registered for, the system asks before saving. For each affected registration you either **cancel** it (the refund due is shown) or **move** it to a camp the player still qualifies for (the price difference is shown). "Go back" leaves the level unchanged.
+  - **Move to another camp:** available on any active registration at any time. Only camps the player qualifies for (age, level, capacity, not already registered) are offered, with the price difference shown. The old registration is kept as cancelled with a "Moved to…" note, and the new one gets a "Moved from… (paid $X)" note, so there's a full history.
+  - Restoring a cancelled registration first checks the camp's capacity and the player's level.
+  - The *Registration accepted* and *Registration denied* emails are only offered when the status actually changes. Re-saving an already-verified player (for example, to change their level) doesn't email them again.
+  - **Players can't lower their own level** below a camp they're registered for. They're asked to contact you instead.
   - View and print the player's **signed waiver**.
   - Cancel or restore registrations, and reset the player's password.
 - **Auto-check pending (10).** Checks pending players in batches of 10.

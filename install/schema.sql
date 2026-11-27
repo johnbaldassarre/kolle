@@ -97,6 +97,7 @@ CREATE TABLE IF NOT EXISTS registrations (
     camp_id     INT UNSIGNED  NOT NULL,
     price       DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     status      ENUM('active','cancelled') NOT NULL DEFAULT 'active',
+    note        VARCHAR(255)  NULL COMMENT 'e.g. Moved from / to another camp',
     created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_reg_camp (camp_id, status),
     KEY idx_reg_user (user_id, status),

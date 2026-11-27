@@ -376,3 +376,13 @@ details summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .all-camps small { display: block; color: var(--muted); }
 .signature-display { font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive; font-size: 1.6rem; }
 @media print { .waiver-text.printable { max-height: none; overflow: visible; border: 0; padding: 0; background: none; } }
+
+/* ---- Camp moves --------------------------------------------------------- */
+.conflict-card { border: 2px solid var(--warning); background: #fffdf6; }
+.conflict-card select { margin: 0; min-width: 260px; }
+.move-row td { border-top: 0; padding-top: 0; }
+.move-row details { margin: 0; }
+.move-row summary { font-size: .85rem; font-weight: 600; color: var(--brand-primary); }
+.move-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+.move-form select { margin: 0; flex: 1 1 220px; padding: 6px 8px; }
+.reg-note { color: var(--info); }

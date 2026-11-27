@@ -137,7 +137,8 @@
     var syncNotify = function () {
       var v = form.querySelector('input[name=verification_status]:checked');
       var val = v ? v.value : '';
-      notify.hidden = val !== 'verified' && val !== 'rejected';
+      // Only offer the email when the status is changing to Verified or Rejected
+      notify.hidden = (val !== 'verified' && val !== 'rejected') || val === form.getAttribute('data-current-status');
       notify.querySelectorAll('[data-notify-label]').forEach(function (l) {
         l.hidden = l.getAttribute('data-notify-label') !== val;
       });

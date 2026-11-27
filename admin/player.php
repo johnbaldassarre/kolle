@@ -22,10 +22,26 @@ if ($p['user_id'] === null) {
     $p = load_player($id);
 }
 
+$resolveConflicts = null; // set when lowering the level needs the admin to cancel/move registrations
 if (is_post()) {
     csrf_check();
     $action = $_POST['action'] ?? '';
-    if ($action === 'auto_check') {
+    if ($action === 'decide') {
+        $newLevel  = (int)($_POST['level_id'] ?? 0);
+        $stmt = db()->prepare('SELECT rank_value FROM levels WHERE id = ?');
+        $stmt->execute([$newLevel]);
+        $newRank   = $stmt->fetchColumn();
+        $newRank   = $newRank === false ? null : (int)$newRank;
+        $rejecting = ($_POST['verification_status'] ?? '') === 'rejected' && !empty($_POST['cancel_regs']);
+        $conflicts = ($newLevel && $newLevel !== (int)$p['level_id'] && !$rejecting) ? level_conflicts($id, $newRank) : [];
+        if ($conflicts && !isset($_POST['resolve'])) {
+            $resolveConflicts = ['conflicts' => $conflicts, 'rank' => $newRank, 'level' => $newLevel];
+            $action = ''; // show the resolution form instead of saving
+        }
+    }
+    if ($action === '') {
+        // fall through to the page with $resolveConflicts set
+    } elseif ($action === 'auto_check') {
         @set_time_limit(60);
         $result = verify_player($p);
         verify_store($id, $result);
@@ -48,8 +64,24 @@ if (is_post()) {
                            WHERE user_id = ?')
                 ->execute([$status, $note ?: null, $status === 'pending' ? null : $admin['id'], $status === 'pending' ? null : date('Y-m-d H:i:s'), $level, $id]);
             $msg = 'Verification saved.';
+            // Registrations the new (lower) level no longer qualifies for: cancel or move each one.
+            foreach ($conflicts as $cf) {
+                $choice = (string)($_POST['resolve'][$cf['id']] ?? 'cancel');
+                if (str_starts_with($choice, 'move:')) {
+                    try {
+                        $mv = move_registration((int)$cf['id'], $id, (int)substr($choice, 5), $newRank);
+                        $msg .= ' Moved from ' . $cf['name'] . ' to ' . $mv['camp'] . ' (' . price_difference_note($mv['diff']) . ')';
+                        continue;
+                    } catch (RuntimeException $ex) {
+                        $msg .= ' Could not move ' . $cf['name'] . ' (' . $ex->getMessage() . '), so it was cancelled.';
+                    }
+                }
+                db()->prepare('UPDATE registrations SET status = "cancelled", note = ? WHERE id = ? AND user_id = ?')
+                    ->execute(['Cancelled: level changed below camp minimum', $cf['id'], $id]);
+                $msg .= ' Cancelled ' . $cf['name'] . ' (requires ' . short_level_name($cf['min_level_name']) . '; refund due: ' . money($cf['price']) . ').';
+            }
             $tplKey = ['verified' => 'registration_accepted', 'rejected' => 'registration_denied'][$status] ?? null;
-            if ($tplKey && !empty($_POST['notify']) && ($tpl = email_template($tplKey))) {
+            if ($tplKey && $status !== $p['verification_status'] && !empty($_POST['notify']) && ($tpl = email_template($tplKey))) {
                 $res = email_send_to_user($id, $tpl, ['cc_parent' => true, 'sent_by' => $admin['id']]);
                 $msg .= $res['ok']
                     ? ' "' . $tpl['name'] . '" email ' . ($res['status'] === 'logged' ? 'recorded (log-only mode).' : 'sent.')
@@ -70,16 +102,25 @@ if (is_post()) {
     } elseif ($action === 'cancel_reg') {
         db()->prepare('UPDATE registrations SET status = "cancelled" WHERE id = ? AND user_id = ?')->execute([(int)$_POST['reg_id'], $id]);
         flash('success', 'Registration cancelled. The spot is open again.');
+    } elseif ($action === 'move_reg') {
+        try {
+            $mv = move_registration((int)($_POST['reg_id'] ?? 0), $id, (int)($_POST['camp_id'] ?? 0), $p['rank_value'] !== null ? (int)$p['rank_value'] : null);
+            flash('success', 'Registration moved to ' . $mv['camp'] . '. ' . price_difference_note($mv['diff']));
+        } catch (RuntimeException $ex) {
+            flash('error', 'Could not move the registration: ' . $ex->getMessage());
+        }
     } elseif ($action === 'restore_reg') {
-        $stmt = db()->prepare('SELECT c.capacity, (SELECT COUNT(*) FROM registrations x WHERE x.camp_id = c.id AND x.status = "active") AS registered,
+        $stmt = db()->prepare('SELECT c.capacity, ml.rank_value AS min_rank, ml.name AS min_name, (SELECT COUNT(*) FROM registrations x WHERE x.camp_id = c.id AND x.status = "active") AS registered,
                                       (SELECT COUNT(*) FROM registrations y WHERE y.user_id = r.user_id AND y.camp_id = r.camp_id AND y.status = "active") AS dup
-                               FROM registrations r JOIN camps c ON c.id = r.camp_id WHERE r.id = ? AND r.user_id = ?');
+                               FROM registrations r JOIN camps c ON c.id = r.camp_id LEFT JOIN levels ml ON ml.id = c.min_level_id WHERE r.id = ? AND r.user_id = ?');
         $stmt->execute([(int)$_POST['reg_id'], $id]);
         $c = $stmt->fetch();
         if (!$c) {
             flash('error', 'Registration not found.');
         } elseif ((int)$c['dup'] > 0) {
             flash('error', 'The player is already registered for this camp.');
+        } elseif ($c['min_rank'] !== null && ($p['rank_value'] === null || (int)$p['rank_value'] < (int)$c['min_rank'])) {
+            flash('error', 'That camp requires ' . short_level_name($c['min_name']) . ' or higher, above this player\'s level. Change their level first, or use Move.');
         } elseif ($c['capacity'] !== null && (int)$c['registered'] >= (int)$c['capacity']) {
             flash('error', 'That camp is full, so the registration cannot be restored.');
         } else {
@@ -95,7 +136,9 @@ if (is_post()) {
             flash('success', 'Password changed. Let the player know their new password.');
         }
     }
-    redirect('admin/player.php?id=' . $id);
+    if (!$resolveConflicts) {
+        redirect('admin/player.php?id=' . $id);
+    }
 }
 
 $stmt = db()->prepare('SELECT r.*, c.name, c.start_date, c.end_date, o.order_number, o.payment_method
@@ -103,6 +146,7 @@ $stmt = db()->prepare('SELECT r.*, c.name, c.start_date, c.end_date, o.order_num
                        WHERE r.user_id = ? ORDER BY r.status, c.start_date');
 $stmt->execute([$id]);
 $regs = $stmt->fetchAll();
+$targets = move_targets($id, $p['birthdate'], $p['rank_value'] !== null ? (int)$p['rank_value'] : null, false);
 
 $stmt = db()->prepare('SELECT l.id, l.subject, l.status, l.created_at, l.to_email, l.cc_email FROM email_log l WHERE l.user_id = ? ORDER BY l.id DESC LIMIT 20');
 $stmt->execute([$id]);
@@ -115,6 +159,48 @@ $pageTitle = $p['first_name'] . ' ' . $p['last_name'];
 $adminPage = 'players';
 require __DIR__ . '/../includes/header.php';
 ?>
+<?php if ($resolveConflicts):
+    $lv = db()->prepare('SELECT name FROM levels WHERE id = ?');
+    $lv->execute([$resolveConflicts['level']]);
+    $newLevelName = (string)$lv->fetchColumn();
+    $newTargets = move_targets($id, $p['birthdate'], $resolveConflicts['rank'], false); ?>
+<form method="post" class="card conflict-card">
+  <?= csrf_field() ?>
+  <input type="hidden" name="action" value="decide">
+  <?php foreach (['verification_status', 'verification_note', 'level_id', 'notify', 'cancel_regs'] as $k): if (isset($_POST[$k])): ?>
+    <input type="hidden" name="<?= $k ?>" value="<?= e((string)$_POST[$k]) ?>">
+  <?php endif; endforeach; ?>
+  <h2>Confirm level change</h2>
+  <p>Changing <?= e($p['first_name'] . ' ' . $p['last_name']) ?>'s level from <strong><?= e($p['level_name'] ?? '—') ?></strong> to <strong><?= e($newLevelName) ?></strong>
+    means they no longer qualify for <?= count($resolveConflicts['conflicts']) === 1 ? 'this camp' : 'these camps' ?>. Choose what to do with each registration:</p>
+  <table class="table">
+    <thead><tr><th>Registered camp</th><th>Requires</th><th class="num">Paid</th><th>Action</th></tr></thead>
+    <tbody>
+    <?php foreach ($resolveConflicts['conflicts'] as $cf): ?>
+      <tr>
+        <td><strong><?= e($cf['name']) ?></strong><br><small class="muted"><?= e(date_range($cf['start_date'], $cf['end_date'])) ?></small></td>
+        <td><?= e(short_level_name($cf['min_level_name'])) ?></td>
+        <td class="num"><?= money($cf['price']) ?></td>
+        <td>
+          <select name="resolve[<?= (int)$cf['id'] ?>]">
+            <option value="cancel">Cancel registration (refund <?= money($cf['price']) ?>)</option>
+            <?php foreach ($newTargets as $t): $d = (float)$t['price'] - (float)$cf['price']; ?>
+              <option value="move:<?= (int)$t['id'] ?>">Move to <?= e($t['name']) ?> – <?= money($t['price']) ?><?= abs($d) >= .005 ? ' (' . ($d > 0 ? 'owes ' . money($d) : 'refund ' . money(-$d)) . ')' : '' ?></option>
+            <?php endforeach; ?>
+          </select>
+          <?php if (!$newTargets): ?><br><small class="muted">No other camps are open to this player at the new level.</small><?php endif; ?>
+        </td>
+      </tr>
+    <?php endforeach; ?>
+    </tbody>
+  </table>
+  <div class="form-actions">
+    <a class="btn btn-ghost" href="<?= e(url('admin/player.php?id=' . $id)) ?>">Go back – don't change the level</a>
+    <button class="btn btn-primary">Confirm level change</button>
+  </div>
+</form>
+<?php endif; ?>
+
 <div class="page-head">
   <h1 class="page-title"><?= e($p['first_name'] . ' ' . $p['last_name']) ?> <?= verification_badge($p['verification_status']) ?></h1>
   <div class="head-actions">
@@ -204,7 +290,7 @@ require __DIR__ . '/../includes/header.php';
   </details>
 
   <hr>
-  <form method="post" class="decision">
+  <form method="post" class="decision" data-current-status="<?= e($p['verification_status']) ?>">
     <?= csrf_field() ?><input type="hidden" name="action" value="decide">
     <h3>Your decision</h3>
     <div class="choice-row">
@@ -245,7 +331,8 @@ require __DIR__ . '/../includes/header.php';
       <tbody>
       <?php foreach ($regs as $r): ?>
         <tr<?= $r['status'] === 'cancelled' ? ' class="inactive"' : '' ?>>
-          <td><?= e($r['name']) ?><br><small class="muted"><?= e(date_range($r['start_date'], $r['end_date'])) ?></small></td>
+          <td><?= e($r['name']) ?><br><small class="muted"><?= e(date_range($r['start_date'], $r['end_date'])) ?></small>
+            <?php if ($r['note']): ?><br><small class="reg-note"><?= e($r['note']) ?></small><?php endif; ?></td>
           <td><?= e($r['order_number']) ?><?= $r['payment_method'] === 'demo' ? ' <span class="tag">demo</span>' : '' ?></td>
           <td class="num"><?= money($r['price']) ?></td>
           <td><form method="post"><?= csrf_field() ?><input type="hidden" name="reg_id" value="<?= (int)$r['id'] ?>">
@@ -255,6 +342,28 @@ require __DIR__ . '/../includes/header.php';
               <input type="hidden" name="action" value="restore_reg"><span class="tag tag-warn">Cancelled</span> <button class="link">Restore</button>
             <?php endif; ?></form></td>
         </tr>
+        <?php if ($r['status'] === 'active'): ?>
+        <tr class="move-row">
+          <td colspan="4">
+            <details>
+              <summary>Move to another camp</summary>
+              <?php if (!$targets): ?>
+                <p class="muted">No other camps are open to this player (age, level, capacity and existing registrations are checked).</p>
+              <?php else: ?>
+              <form method="post" class="move-form">
+                <?= csrf_field() ?><input type="hidden" name="action" value="move_reg"><input type="hidden" name="reg_id" value="<?= (int)$r['id'] ?>">
+                <select name="camp_id">
+                  <?php foreach ($targets as $t): $d = (float)$t['price'] - (float)$r['price']; ?>
+                    <option value="<?= (int)$t['id'] ?>"><?= e($t['name']) ?> – <?= money($t['price']) ?><?= abs($d) >= .005 ? ' (' . ($d > 0 ? 'owes ' . money($d) : 'refund ' . money(-$d)) . ')' : '' ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <button class="btn btn-ghost btn-sm" data-confirm="Move this player to the selected camp?">Move</button>
+              </form>
+              <?php endif; ?>
+            </details>
+          </td>
+        </tr>
+        <?php endif; ?>
       <?php endforeach; ?>
       </tbody>
     </table>

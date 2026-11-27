@@ -176,6 +176,15 @@ if (is_post()) {
         if (!in_array($data['position'], ['Forward', 'Defence', 'Goalie'], true)) $errors['position'] = 'Choose a position.';
         if (!in_array($data['shoots'], ['L', 'R'], true)) $errors['shoots'] = 'Choose one.';
 
+        // Players can't lower their own level below a camp they're already registered for.
+        if (!$errors && (int)($player['level_id'] ?? 0) !== $data['level_id']) {
+            $r = db()->prepare('SELECT rank_value FROM levels WHERE id = ?');
+            $r->execute([$data['level_id']]);
+            if ($cf = level_conflicts((int)$user['id'], (int)$r->fetchColumn())) {
+                $errors['level_id'] = 'You are registered for ' . implode(', ', array_column($cf, 'name')) . ', which requires '
+                    . short_level_name($cf[0]['min_level_name']) . ' or higher. Please contact us at ' . setting('contact_email') . ' to change your level.';
+            }
+        }
         if (!$errors) {
             $old = $player;
             $sql = 'UPDATE players SET is_adult = ?, parent_first_name = ?, parent_last_name = ?, parent_relationship = ?,

@@ -292,6 +292,76 @@ function short_level_name(string $name): string
     return trim(preg_replace('/\s*\([^)]*\)\s*$/', '', $name)) ?: $name;
 }
 
+// ---- Level changes & camp moves ------------------------------------------
+
+/** Active registrations whose camp requires a higher level than $rank. */
+function level_conflicts(int $userId, ?int $rank): array
+{
+    $stmt = db()->prepare('SELECT r.id, r.camp_id, r.price, c.name, c.start_date, c.end_date, ml.name AS min_level_name, ml.rank_value AS min_level_rank
+                           FROM registrations r JOIN camps c ON c.id = r.camp_id JOIN levels ml ON ml.id = c.min_level_id
+                           WHERE r.user_id = ? AND r.status = "active" AND ml.rank_value > ? ORDER BY c.start_date');
+    $stmt->execute([$userId, $rank ?? -1]);
+    return $stmt->fetchAll();
+}
+
+/** Camps a player could be moved into (eligible at $rank, not full, not already registered). */
+function move_targets(int $userId, ?string $birthdate, ?int $rank, bool $activeOnly = true): array
+{
+    $already = user_camp_ids($userId);
+    return array_values(array_filter(camps_with_counts($activeOnly),
+        fn($c) => camp_block_reason($c, $birthdate, $already, $rank) === null));
+}
+
+/**
+ * Move a registration to another camp. The old registration is kept as cancelled
+ * (for history) and a new one is created on the same order at the new camp's price.
+ * Returns ['diff' => price difference (positive = player owes more, negative = refund due), 'camp' => new camp name].
+ * Throws RuntimeException if the move isn't allowed.
+ */
+function move_registration(int $regId, int $userId, int $newCampId, ?int $rank): array
+{
+    $pdo = db();
+    $own = $pdo->inTransaction() === false;
+    if ($own) $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare('SELECT r.*, c.name AS camp_name FROM registrations r JOIN camps c ON c.id = r.camp_id
+                               WHERE r.id = ? AND r.user_id = ? AND r.status = "active" FOR UPDATE');
+        $stmt->execute([$regId, $userId]);
+        $reg = $stmt->fetch();
+        if (!$reg) {
+            throw new RuntimeException('Registration not found or no longer active.');
+        }
+        $stmt = $pdo->prepare('SELECT c.*, (SELECT COUNT(*) FROM registrations x WHERE x.camp_id = c.id AND x.status = "active") AS registered,
+                                      ml.name AS min_level_name, ml.rank_value AS min_level_rank
+                               FROM camps c LEFT JOIN levels ml ON ml.id = c.min_level_id WHERE c.id = ? FOR UPDATE');
+        $stmt->execute([$newCampId]);
+        $camp = $stmt->fetch();
+        if (!$camp) {
+            throw new RuntimeException('Camp not found.');
+        }
+        $u = $pdo->prepare('SELECT birthdate FROM users WHERE id = ?');
+        $u->execute([$userId]);
+        if ($why = camp_block_reason($camp, $u->fetchColumn() ?: null, user_camp_ids($userId), $rank)) {
+            throw new RuntimeException($camp['name'] . ': ' . $why . '.');
+        }
+        $pdo->prepare('UPDATE registrations SET status = "cancelled", note = ? WHERE id = ?')
+            ->execute([mb_substr('Moved to ' . $camp['name'] . ' on ' . date('M j, Y'), 0, 255), $regId]);
+        $pdo->prepare('INSERT INTO registrations (order_id, user_id, camp_id, price, note) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$reg['order_id'], $userId, $newCampId, $camp['price'], mb_substr('Moved from ' . $reg['camp_name'] . ' (paid ' . money($reg['price']) . ')', 0, 255)]);
+        if ($own) $pdo->commit();
+        return ['diff' => round((float)$camp['price'] - (float)$reg['price'], 2), 'camp' => $camp['name']];
+    } catch (Throwable $e) {
+        if ($own) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+function price_difference_note(float $diff): string
+{
+    if (abs($diff) < 0.005) return 'Same price.';
+    return $diff > 0 ? 'Player owes ' . money($diff) . ' more.' : 'Refund due: ' . money(-$diff) . '.';
+}
+
 // ---- Waivers -------------------------------------------------------------
 
 function waiver_version(): int
