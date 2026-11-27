@@ -5,3 +5,8 @@ INSERT INTO camps (name, description, location, start_date, end_date, schedule, 
 ('Pro / College Summer Skate', 'Summer ice for pro, college and adult elite players. Goalies welcome.', 'Main Arena – Rink B', '2027-06-14', '2027-08-27', 'Tue & Thu · 7:00 AM – 8:30 AM (12 sessions)', NULL, 2008, 40, 375.00, 1, 30),
 ('Power Skating Clinic', 'Stride mechanics, crossovers, transitions and explosive starts.', 'Community Rink', '2027-07-19', '2027-07-21', '3 days · 5:00 PM – 6:30 PM', 2010, 2016, 25, 225.00, 1, 40),
 ('Shooting & Scoring Clinic', 'Release, deception and finishing around the net. Open to all ages 10+.', 'Community Rink', '2027-07-26', '2027-07-28', '3 days · 5:00 PM – 6:30 PM', NULL, 2016, 25, 225.00, 1, 50);
+
+-- Minimum level of play for the higher-end camps
+UPDATE camps SET min_level_id = (SELECT id FROM levels WHERE name LIKE 'Junior B%' LIMIT 1) WHERE name = 'Junior / Prospect Camp';
+UPDATE camps SET min_level_id = (SELECT id FROM levels WHERE name LIKE 'ACHA%' LIMIT 1) WHERE name = 'Pro / College Summer Skate';
+UPDATE camps SET min_level_id = (SELECT id FROM levels WHERE name LIKE 'A / BB%' LIMIT 1) WHERE name LIKE 'Elite Skills Camp%';

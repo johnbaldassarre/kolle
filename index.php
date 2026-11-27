@@ -19,8 +19,9 @@ require __DIR__ . '/includes/header.php';
     <li><span>1</span>Create your account</li>
     <li><span>2</span>Tell us your level of play</li>
     <li><span>3</span>Share your player profile</li>
-    <li><span>4</span>Pick your camps</li>
-    <li><span>5</span>Check out</li>
+    <li><span>4</span>Sign the waiver</li>
+    <li><span>5</span>Pick your camps</li>
+    <li><span>6</span>Check out</li>
   </ol>
 </section>
 
@@ -43,6 +44,7 @@ require __DIR__ . '/includes/header.php';
           <?php if ($c['description']): ?><span class="camp-desc"><?= e($c['description']) ?></span><?php endif; ?>
           <span class="camp-tags">
             <span class="tag"><?= e(birth_years_label($c['min_birth_year'] ? (int)$c['min_birth_year'] : null, $c['max_birth_year'] ? (int)$c['max_birth_year'] : null)) ?></span>
+            <?php if (camp_level_label($c)): ?><span class="tag"><?= e(camp_level_label($c)) ?></span><?php endif; ?>
             <?php if ($full): ?><span class="tag tag-warn">Full</span><?php endif; ?>
           </span>
         </span>

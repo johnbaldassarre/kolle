@@ -18,14 +18,16 @@ require __DIR__ . '/includes/header.php';
 ?>
 <h1 class="page-title">Welcome, <?= e($user['first_name']) ?></h1>
 
-<?php if (!$complete): ?>
+<?php if (($player['verification_status'] ?? '') === 'rejected'): ?>
+  <div class="alert alert-error">Your registration was not accepted after review<?= !empty($player['verification_note']) ? ': ' . e($player['verification_note']) : '.' ?> Please contact <a href="mailto:<?= e(setting('contact_email')) ?>"><?= e(setting('contact_email')) ?></a> with any questions.</div>
+<?php elseif (!$complete): ?>
   <div class="alert alert-info">Your registration isn't finished yet. <a href="<?= e(url('register.php')) ?>">Continue where you left off &rarr;</a></div>
 <?php endif; ?>
 
 <div class="grid-2 cards">
   <div class="card">
     <div class="card-head"><h2>My camps</h2>
-      <?php if ($complete): ?><a class="btn btn-primary btn-sm" href="<?= e(url('register.php?step=4')) ?>">+ Add camps</a><?php endif; ?>
+      <?php if ($complete && ($player['verification_status'] ?? '') !== 'rejected'): ?><a class="btn btn-primary btn-sm" href="<?= e(url('register.php?step=5')) ?>">+ Add camps</a><?php endif; ?>
     </div>
     <?php if (!$regs): ?>
       <p class="muted">You aren't registered for any camps yet.</p>
@@ -53,6 +55,10 @@ require __DIR__ . '/includes/header.php';
       <dt>Level of play</dt><dd><?= e($player['level_name'] ?? '—') ?><?= !empty($player['league_name']) ? '<br>' . e($player['league_name']) . ($player['team_name'] ? ' – ' . e($player['team_name']) : '') . ' (' . e($player['last_season']) . ')' : '' ?></dd>
       <dt>Profile link</dt><dd><?= !empty($player['profile_url']) ? '<a href="' . e($player['profile_url']) . '" target="_blank" rel="noopener noreferrer">' . e(profile_source_label($player['profile_source'])) . '</a>' : e(profile_source_label($player['profile_source'] ?? null)) ?></dd>
       <dt>Level verification</dt><dd><?= verification_badge($player['verification_status'] ?? 'pending') ?></dd>
+      <?php $w = latest_waiver((int)$user['id']); ?>
+      <dt>Waiver</dt><dd><?php if ($w): ?>Signed by <?= e($w['signer_name']) ?> on <?= e(fmt_date($w['signed_at'])) ?>
+        <?php if ((int)$w['waiver_version'] < waiver_version()): ?><br><a href="<?= e(url('register.php?step=4')) ?>">Updated waiver – please sign</a><?php endif; ?>
+        <?php else: ?><a href="<?= e(url('register.php?step=4')) ?>">Not signed yet</a><?php endif; ?></dd>
     </dl>
   </div>
 </div>

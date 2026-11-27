@@ -44,14 +44,15 @@ require __DIR__ . '/../includes/header.php';
   <?= csrf_field() ?>
   <input type="hidden" name="action" value="price">
   <table class="table">
-    <thead><tr><th>Camp</th><th>Dates</th><th>Age group</th><th class="num">Enrolled</th><th class="num" style="width:140px">Price</th><th>Status</th><th></th></tr></thead>
+    <thead><tr><th>Camp</th><th>Dates</th><th>Eligibility</th><th class="num">Enrolled</th><th class="num" style="width:140px">Price</th><th>Status</th><th></th></tr></thead>
     <tbody>
     <?php if (!$camps): ?><tr><td colspan="7" class="muted">No camps yet. Create your first camp.</td></tr><?php endif; ?>
     <?php foreach ($camps as $c): ?>
       <tr<?= $c['is_active'] ? '' : ' class="inactive"' ?>>
         <td><strong><?= e($c['name']) ?></strong><br><small class="muted"><?= e($c['location']) ?></small></td>
         <td><?= e(date_range($c['start_date'], $c['end_date'])) ?></td>
-        <td><?= e(birth_years_label($c['min_birth_year'] ? (int)$c['min_birth_year'] : null, $c['max_birth_year'] ? (int)$c['max_birth_year'] : null)) ?></td>
+        <td><?= e(birth_years_label($c['min_birth_year'] ? (int)$c['min_birth_year'] : null, $c['max_birth_year'] ? (int)$c['max_birth_year'] : null)) ?>
+          <?php if (camp_level_label($c)): ?><br><small class="muted"><?= e(camp_level_label($c)) ?></small><?php endif; ?></td>
         <td class="num"><?= (int)$c['registered'] ?><?= $c['capacity'] ? ' / ' . (int)$c['capacity'] : '' ?></td>
         <td class="num"><div class="input-money"><span><?= e(setting('currency_symbol', '$')) ?></span><input type="number" step="0.01" min="0" name="prices[<?= (int)$c['id'] ?>]" value="<?= e($c['price']) ?>"></div></td>
         <td><?= $c['is_active'] ? '<span class="badge badge-verified">Open</span>' : '<span class="badge badge-rejected">Hidden</span>' ?></td>

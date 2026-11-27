@@ -39,8 +39,8 @@ if ($type === 'roster') {
     $rows = array_map(fn($r) => array_merge([
         $r['last_name'], $r['first_name'], $r['birthdate'], age_from_birthdate($r['birthdate']), $r['position'], $r['shoots'],
         $r['level_name'], $r['league_name'], $r['team_name'], $r['last_season'], $r['verification_status'], $r['auto_check_score'],
-    ], contact_cols($r), [$r['profile_url'], $r['order_number'], $r['price']]), roster_rows((int)$_GET['camp']));
-    csv_out('roster-' . $name . '-' . date('Ymd') . '.csv', array_merge($header, ['Order', 'Price']), $rows);
+    ], contact_cols($r), [$r['profile_url'], $r['order_number'], $r['price'], $r['waiver_signed_at']]), roster_rows((int)$_GET['camp']));
+    csv_out('roster-' . $name . '-' . date('Ymd') . '.csv', array_merge($header, ['Order', 'Price', 'Waiver signed']), $rows);
 }
 
 if ($type === 'players') {

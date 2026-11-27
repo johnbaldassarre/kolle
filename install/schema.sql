@@ -65,12 +65,14 @@ CREATE TABLE IF NOT EXISTS camps (
     min_birth_year      SMALLINT      NULL,
     max_birth_year      SMALLINT      NULL,
     capacity            INT           NULL COMMENT 'NULL = unlimited',
+    min_level_id        INT UNSIGNED  NULL COMMENT 'Lowest level of play allowed; NULL = any level',
     price               DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     registration_opens  DATE          NULL,
     registration_closes DATE          NULL,
     is_active           TINYINT(1)    NOT NULL DEFAULT 1,
     sort_order          INT           NOT NULL DEFAULT 0,
-    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at          DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_camps_min_level FOREIGN KEY (min_level_id) REFERENCES levels(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -106,4 +108,18 @@ CREATE TABLE IF NOT EXISTS registrations (
 CREATE TABLE IF NOT EXISTS settings (
     setting_key   VARCHAR(60) PRIMARY KEY,
     setting_value TEXT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS waivers (
+    id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id             INT UNSIGNED NOT NULL,
+    waiver_version      INT          NOT NULL,
+    signer_name         VARCHAR(160) NOT NULL,
+    signer_relationship VARCHAR(40)  NOT NULL COMMENT 'Self, Mother, Father, Legal Guardian, ...',
+    waiver_text         TEXT         NOT NULL COMMENT 'Exact wording that was signed',
+    ip                  VARCHAR(45)  NULL,
+    user_agent          VARCHAR(255) NULL,
+    signed_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_waivers_user (user_id, signed_at),
+    CONSTRAINT fk_waivers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -2,7 +2,7 @@
 require __DIR__ . '/../includes/bootstrap.php';
 $me = require_admin();
 
-$keys = ['site_name', 'site_url', 'contact_email', 'main_site_url', 'logo_url', 'currency_symbol', 'currency_code', 'waiver_text'];
+$keys = ['site_name', 'site_url', 'contact_email', 'main_site_url', 'logo_url', 'currency_symbol', 'currency_code'];
 
 if (is_post()) {
     csrf_check();
@@ -13,6 +13,20 @@ if (is_post()) {
         }
         save_setting('registration_open', !empty($_POST['registration_open']) ? '1' : '0');
         flash('success', 'Settings saved.');
+    } elseif ($action === 'waiver') {
+        $text = trim(str_replace("\r\n", "\n", (string)($_POST['waiver_text'] ?? '')));
+        if (strlen($text) < 20) {
+            flash('error', 'The waiver text is too short.');
+        } else {
+            $changed = $text !== setting('waiver_text');
+            save_setting('waiver_text', $text);
+            if ($changed && !empty($_POST['require_resign'])) {
+                save_setting('waiver_version', (string)(waiver_version() + 1));
+                flash('success', 'Waiver saved as version ' . waiver_version() . '. Players must sign the new version before registering for more camps.');
+            } else {
+                flash('success', $changed ? 'Waiver wording saved. Existing signatures remain valid.' : 'No changes to the waiver.');
+            }
+        }
     } elseif ($action === 'test_email') {
         $res = mail_deliver($me['email'], $me['first_name'], null, 'Test email from ' . site_name(),
             "This is a test email from your registration system.\n\nIf you can read this, email delivery is working.\n\n" . absolute_url('admin/'));
@@ -78,10 +92,19 @@ require __DIR__ . '/../includes/header.php';
     <label>Logo image URL<input name="logo_url" value="<?= e(setting('logo_url')) ?>" placeholder="Leave blank to use assets/img/logo.svg"><span class="hint">A wide logo works best (about 200×60 px).</span></label>
     <label>Currency symbol<input name="currency_symbol" value="<?= e(setting('currency_symbol', '$')) ?>" class="w-sm"></label>
     <label>Currency code<input name="currency_code" value="<?= e(setting('currency_code', 'CAD')) ?>" class="w-sm"></label>
-    <label class="span-2">Waiver text shown at checkout<textarea name="waiver_text" rows="3"><?= e(setting('waiver_text')) ?></textarea></label>
   </div>
   <label class="checkbox"><input type="checkbox" name="registration_open" value="1"<?= checked(setting('registration_open', '1') === '1') ?>><span>Registration is open to the public</span></label>
   <div class="form-actions"><span class="muted">Demo mode is <?= !empty($GLOBALS['config']['demo_mode']) ? '<strong>on</strong>' : 'off' ?> (set in config.php).</span><button class="btn btn-primary">Save settings</button></div>
+</form>
+
+<form method="post" class="card" id="waiver">
+  <?= csrf_field() ?><input type="hidden" name="action" value="waiver">
+  <?php $signedCurrent = (int)db()->query('SELECT COUNT(DISTINCT user_id) FROM waivers WHERE waiver_version >= ' . waiver_version())->fetchColumn(); ?>
+  <div class="card-head"><h2>Waiver</h2><span class="tag">Version <?= waiver_version() ?> &middot; signed by <?= $signedCurrent ?> player(s)</span></div>
+  <p class="muted">Players read and sign this as step 4 of registration, before choosing camps. For players under 18 the parent/guardian on file signs. Each signature stores a copy of the exact wording signed.</p>
+  <label>Waiver text<textarea name="waiver_text" rows="14"><?= e(setting('waiver_text')) ?></textarea><span class="hint">Plain text; blank lines separate paragraphs.</span></label>
+  <label class="checkbox"><input type="checkbox" name="require_resign" value="1"><span>This is a significant change &mdash; make everyone sign the new version before they can register for more camps</span></label>
+  <div class="form-actions"><span class="muted">Leave the box unticked for typo fixes; existing signatures stay valid.</span><button class="btn btn-primary">Save waiver</button></div>
 </form>
 
 <?php $mc = mail_config(); ?>

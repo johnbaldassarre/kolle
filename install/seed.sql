@@ -28,4 +28,19 @@ INSERT INTO settings (setting_key, setting_value) VALUES
 ('currency_symbol', '$'),
 ('currency_code', 'CAD'),
 ('registration_open', '1'),
-('waiver_text', 'I acknowledge that ice hockey is a contact sport with inherent risk of injury, and I release Ty Kolle Hockey Development, its staff and facilities from liability for injuries sustained during participation.');
+('waiver_version', '1'),
+('waiver_text', 'PARTICIPANT WAIVER, RELEASE OF LIABILITY AND ASSUMPTION OF RISK
+
+1. Assumption of risk. I understand that ice hockey and related on-ice and off-ice training are physical, contact activities that carry an inherent risk of injury, including but not limited to sprains, fractures, concussions, cuts from skate blades, collisions with players, boards, pucks and sticks, and in rare cases serious injury or death. I voluntarily assume all such risks.
+
+2. Equipment. The participant will wear full, properly fitted CSA/HECC-approved hockey equipment, including a helmet with full face protection, at all times on the ice.
+
+3. Medical. I confirm the participant is physically fit to take part. I authorize the camp staff to obtain emergency medical treatment for the participant if needed, and I accept responsibility for any associated costs.
+
+4. Release. In consideration of being allowed to participate, I release, waive and agree not to sue Ty Kolle Hockey Development, its owners, coaches, staff, volunteers and facility operators for any injury, loss or damage arising from participation, except where caused by gross negligence.
+
+5. Conduct. The participant will follow the instructions of staff and the rules of the facility. Staff may remove a participant for unsafe or disrespectful behaviour without refund.
+
+6. Photos and video. I consent to photos and video of the participant being taken during camp and used for coaching and promotional purposes.
+
+I have read this waiver, understand it, and sign it voluntarily. If the participant is under 18, I am their parent or legal guardian and sign on their behalf.');

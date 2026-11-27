@@ -6,7 +6,7 @@
 declare(strict_types=1);
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '1.1.0');
+define('APP_VERSION', '1.2.0');
 
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/auth.php';

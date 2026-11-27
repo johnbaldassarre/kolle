@@ -4,13 +4,23 @@ A self-contained camp registration system for players, with an admin back office
 
 ## Features
 
-**Player side: a 5-step registration wizard**
+**Player side: a 6-step registration wizard**
 
 1. **Account.** Player name, email, birthdate and a password the player chooses.
 2. **Player info.** Asks "Are you 18 or older?". If the player is under 18, it collects the parent or guardian's name, relationship, email and phone. Every player then gives their last level of hockey played: the tier, league, team, season, position and shooting hand. The answer is checked against the birthdate.
 3. **Player profile.** An Elite Prospects link, a league player page, another link, or "no profile" with an explanation. Admins use this to verify the player.
-4. **Select camps.** Camps appear as selectable cards and the total updates as the player picks them. Camps are greyed out when they are full, outside the player's age group (by birth year), closed, or already purchased.
-5. **Checkout.** An order summary, a waiver checkbox and a **demo payment**. The order is recorded as paid and no card is charged.
+4. **Waiver.** The player reads the full waiver and signs it electronically by typing their name.
+   - **Under 18:** the parent/guardian on file must sign, and the name typed has to match that parent's name.
+   - **Adults:** the name typed has to match the player's own name.
+   - **What's stored:** each signature is saved with the date, IP address, browser and a copy of the exact wording signed.
+   - **Required:** the player can't reach camp selection until the current waiver is signed.
+5. **Select camps.** Camps appear as selectable cards and the total updates as the player picks them. An **All Camps** option ticks every camp the player is eligible for in one click. Camps are greyed out, with the reason shown, when the player can't take them:
+   - the camp is full, closed, or already purchased
+   - the player is outside the camp's birth years
+   - the player's level of play is **below the camp's minimum level**. Eligibility uses the claimed level, or the level an admin confirmed if they corrected it.
+
+   These rules are also checked on the server at checkout.
+6. **Checkout.** An order summary, confirmation that the waiver is signed, and a **demo payment**. The order is recorded as paid and no card is charged.
 
 Players can log back in, see their camps and verification status, edit their info and add more camps later.
 
@@ -19,11 +29,18 @@ Players can log back in, see their camps and verification status, edit their inf
 **Admin side** (`/admin/`)
 
 - **Dashboard.** Registrations, revenue, how full each camp is, players waiting for verification and recent orders.
-- **Camps & Pricing.** Create, edit, hide or delete camps. Each camp has a price, capacity, dates, schedule, location, eligible birth years and registration open/close dates. You can also change prices directly in the list.
+- **Camps & Pricing.** Create, edit, hide or delete camps. Each camp has a price, capacity, dates, schedule, location, eligible birth years, a **minimum level of play** and registration open/close dates. You can also change prices directly in the list.
 - **Players & Verification.** Search and filter by camp, level and verification status. On each player's page you can:
   - **Run an auto-check** on the profile link. The system fetches the Elite Prospects or league page and checks the name, birthdate and the leagues in the season-by-season stats. It compares these with the level the player claimed and gives a 0–100 score with a checklist.
   - **Check pasted page text.** Some sites, Elite Prospects included, often block automated requests. In that case the admin copies the page (Ctrl+A, Ctrl+C) and pastes it in, and the same matching runs on the text.
-  - Mark the player Verified, Flagged or Rejected, correct their level and add an internal note.
+  - Mark the player Verified, Flagged or Rejected, correct their level and add a note.
+  - **Rejecting a player** does four things:
+    - It sends the *Registration denied* email (optional), which lists their camps.
+    - It **cancels all of their camp registrations**, which frees the spots. The confirmation shows the refund amount due.
+    - It stops them registering for more camps.
+    - The rejection can't be cleared by the player editing their profile. Only an admin can change the status.
+  - When restoring a cancelled registration, the camp's capacity is checked first.
+  - View and print the player's **signed waiver**.
   - Cancel or restore registrations, and reset the player's password.
 - **Auto-check pending (10).** Checks pending players in batches of 10.
 - **Reports & Rosters.** A printable roster for each camp, or all camps with one camp per page. Rosters have an attendance column and can be sorted by name, level, position, age or verification. There is also a level-of-play mix for each camp and CSV export (rosters, all registrations, all players).
@@ -35,7 +52,9 @@ Players can log back in, see their camps and verification status, edit their inf
   - **Send an email:** to one player, everyone in a camp, all registered players, or players with a given verification status. You can start from any template and adjust it for that one send.
   - **Sent log:** every email is recorded with its status (sent, failed or log-only), and you can open each one to see exactly what was sent. A player's page also lists the emails sent to them.
 - **Levels of Play.** Edit the tiers players choose from, their rank, and the league keywords the verifier looks for.
-- **Settings.** Organization name, contact email, logo URL, currency, waiver text, opening or closing registration, administrator accounts and changing your password.
+- **Settings.** Organization name, contact email, logo URL, currency, opening or closing registration, administrator accounts and changing your password.
+  - **Waiver:** edit the text here. Tick "make everyone sign the new version" for a significant change; players then have to sign again before adding camps. Leave it unticked for typo fixes, and existing signatures stay valid.
+- **Rosters and CSV exports** show whether each player has signed the waiver.
 
 ## Requirements
 

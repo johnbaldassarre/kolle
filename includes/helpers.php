@@ -227,8 +227,9 @@ function camps_with_counts(bool $activeOnly = true): array
 {
     $sql = 'SELECT c.*,
                    (SELECT COUNT(*) FROM registrations r WHERE r.camp_id = c.id AND r.status = "active") AS registered,
-                   (SELECT COALESCE(SUM(r.price), 0) FROM registrations r WHERE r.camp_id = c.id AND r.status = "active") AS revenue
-            FROM camps c'
+                   (SELECT COALESCE(SUM(r.price), 0) FROM registrations r WHERE r.camp_id = c.id AND r.status = "active") AS revenue,
+                   ml.name AS min_level_name, ml.rank_value AS min_level_rank
+            FROM camps c LEFT JOIN levels ml ON ml.id = c.min_level_id'
          . ($activeOnly ? ' WHERE c.is_active = 1' : '')
          . ' ORDER BY c.sort_order, c.start_date, c.name';
     return db()->query($sql)->fetchAll();
@@ -236,9 +237,12 @@ function camps_with_counts(bool $activeOnly = true): array
 
 /**
  * Why a player cannot register for a camp, or null if they can.
- * $alreadyIds = camp ids the player is already registered for.
+ * $alreadyIds  = camp ids the player is already registered for.
+ * $playerRank  = rank of the player's level of play (see Levels of Play); camps
+ *                with a minimum level only accept players at that rank or higher.
+ * The camp row must include min_level_rank / min_level_name (camps_with_counts() does).
  */
-function camp_block_reason(array $camp, ?string $birthdate, array $alreadyIds = []): ?string
+function camp_block_reason(array $camp, ?string $birthdate, array $alreadyIds = [], ?int $playerRank = null): ?string
 {
     if (in_array((int)$camp['id'], $alreadyIds, true)) {
         return 'Already registered';
@@ -262,7 +266,70 @@ function camp_block_reason(array $camp, ?string $birthdate, array $alreadyIds = 
             return 'Outside age group';
         }
     }
+    if (isset($camp['min_level_rank']) && $camp['min_level_rank'] !== null && ($playerRank === null || $playerRank < (int)$camp['min_level_rank'])) {
+        return 'Requires ' . short_level_name($camp['min_level_name']) . ' or higher';
+    }
     return null;
+}
+
+/** Rank of the player's (claimed or admin-confirmed) level of play, or null. */
+function player_level_rank(int $userId): ?int
+{
+    $stmt = db()->prepare('SELECT l.rank_value FROM players p JOIN levels l ON l.id = p.level_id WHERE p.user_id = ?');
+    $stmt->execute([$userId]);
+    $r = $stmt->fetchColumn();
+    return $r === false ? null : (int)$r;
+}
+
+function camp_level_label(array $camp): string
+{
+    return !empty($camp['min_level_name']) ? short_level_name($camp['min_level_name']) . ' and above' : '';
+}
+
+/** "Junior B / Tier III (GOJHL, KIJHL, ...)" -> "Junior B / Tier III" for compact labels. */
+function short_level_name(string $name): string
+{
+    return trim(preg_replace('/\s*\([^)]*\)\s*$/', '', $name)) ?: $name;
+}
+
+// ---- Waivers -------------------------------------------------------------
+
+function waiver_version(): int
+{
+    return max(1, (int)setting('waiver_version', '1'));
+}
+
+/** Most recent waiver the user signed, or null. */
+function latest_waiver(int $userId): ?array
+{
+    $stmt = db()->prepare('SELECT * FROM waivers WHERE user_id = ? ORDER BY id DESC LIMIT 1');
+    $stmt->execute([$userId]);
+    return $stmt->fetch() ?: null;
+}
+
+/** True if the user has signed the current version of the waiver. */
+function has_current_waiver(int $userId): bool
+{
+    $w = latest_waiver($userId);
+    return $w !== null && (int)$w['waiver_version'] >= waiver_version();
+}
+
+/** Lowercase, accent-free, single-spaced name for signature comparisons. */
+function normalize_name(string $name): string
+{
+    if (function_exists('transliterator_transliterate')) {
+        $t = transliterator_transliterate('Any-Latin; Latin-ASCII', $name);
+        if ($t !== false) {
+            $name = $t;
+        }
+    } elseif (function_exists('iconv')) {
+        $t = @iconv('UTF-8', 'ASCII//TRANSLIT', $name);
+        if ($t !== false) {
+            $name = $t;
+        }
+    }
+    $name = strtolower(preg_replace('/[^A-Za-z\s\-\']/', '', $name));
+    return trim(preg_replace('/[\s\-]+/', ' ', str_replace("'", '', $name)));
 }
 
 function user_camp_ids(int $userId): array

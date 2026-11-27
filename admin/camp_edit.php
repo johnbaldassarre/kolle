@@ -5,7 +5,7 @@ require_admin();
 $id = (int)($_GET['id'] ?? 0);
 $camp = [
     'name' => '', 'description' => '', 'location' => '', 'start_date' => '', 'end_date' => '', 'schedule' => '',
-    'min_birth_year' => '', 'max_birth_year' => '', 'capacity' => '', 'price' => '0.00',
+    'min_birth_year' => '', 'max_birth_year' => '', 'capacity' => '', 'min_level_id' => '', 'price' => '0.00',
     'registration_opens' => '', 'registration_closes' => '', 'is_active' => 1, 'sort_order' => 0,
 ];
 if ($id) {
@@ -40,22 +40,24 @@ if (is_post()) {
         if ($in[$y] !== '' && (!ctype_digit($in[$y]) || $in[$y] < 1930 || $in[$y] > (int)date('Y'))) $errors[$y] = 'Enter a 4-digit year.';
     }
     if ($in['min_birth_year'] && $in['max_birth_year'] && $in['min_birth_year'] > $in['max_birth_year']) $errors['max_birth_year'] = 'Must be the same or later than the earliest year.';
+    $levelIds = array_map('intval', array_column(levels(false), 'id'));
+    if ($in['min_level_id'] !== '' && !in_array((int)$in['min_level_id'], $levelIds, true)) $errors['min_level_id'] = 'Choose a level from the list.';
     if ($in['capacity'] !== '' && (!ctype_digit($in['capacity']) || (int)$in['capacity'] < 1)) $errors['capacity'] = 'Enter a whole number, or leave blank for unlimited.';
 
     if (!$errors) {
         $vals = [
             $in['name'], $in['description'] ?: null, $in['location'] ?: null, $in['start_date'] ?: null, $in['end_date'] ?: null,
             $in['schedule'] ?: null, $in['min_birth_year'] ?: null, $in['max_birth_year'] ?: null, $in['capacity'] !== '' ? (int)$in['capacity'] : null,
-            round((float)$in['price'], 2), $in['registration_opens'] ?: null, $in['registration_closes'] ?: null, $in['is_active'], (int)$in['sort_order'],
+            $in['min_level_id'] !== '' ? (int)$in['min_level_id'] : null, round((float)$in['price'], 2), $in['registration_opens'] ?: null, $in['registration_closes'] ?: null, $in['is_active'], (int)$in['sort_order'],
         ];
         if ($id) {
             $vals[] = $id;
             db()->prepare('UPDATE camps SET name=?, description=?, location=?, start_date=?, end_date=?, schedule=?, min_birth_year=?, max_birth_year=?,
-                           capacity=?, price=?, registration_opens=?, registration_closes=?, is_active=?, sort_order=? WHERE id=?')->execute($vals);
+                           capacity=?, min_level_id=?, price=?, registration_opens=?, registration_closes=?, is_active=?, sort_order=? WHERE id=?')->execute($vals);
             flash('success', 'Camp updated.');
         } else {
             db()->prepare('INSERT INTO camps (name, description, location, start_date, end_date, schedule, min_birth_year, max_birth_year,
-                           capacity, price, registration_opens, registration_closes, is_active, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute($vals);
+                           capacity, min_level_id, price, registration_opens, registration_closes, is_active, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')->execute($vals);
             flash('success', 'Camp created.');
         }
         redirect('admin/camps.php');
@@ -95,7 +97,15 @@ require __DIR__ . '/../includes/header.php';
   <div class="grid-3">
     <label>Earliest birth year<input type="number" name="min_birth_year" value="<?= e((string)$camp['min_birth_year']) ?>" placeholder="Any"><span class="hint">Oldest players allowed</span><?= ce($errors, 'min_birth_year') ?></label>
     <label>Latest birth year<input type="number" name="max_birth_year" value="<?= e((string)$camp['max_birth_year']) ?>" placeholder="Any"><span class="hint">Youngest players allowed</span><?= ce($errors, 'max_birth_year') ?></label>
-    <div></div>
+    <label>Minimum level of play
+      <select name="min_level_id">
+        <option value="">Any level</option>
+        <?php foreach (levels(false) as $l): ?>
+          <option value="<?= (int)$l['id'] ?>"<?= selected($camp['min_level_id'], $l['id']) ?>><?= e($l['name']) ?> (rank <?= (int)$l['rank_value'] ?>)</option>
+        <?php endforeach; ?>
+      </select>
+      <span class="hint">Players who claimed a lower level can't register.</span><?= ce($errors, 'min_level_id') ?>
+    </label>
     <label>Registration opens<input type="date" name="registration_opens" value="<?= e((string)$camp['registration_opens']) ?>"><?= ce($errors, 'registration_opens') ?></label>
     <label>Registration closes<input type="date" name="registration_closes" value="<?= e((string)$camp['registration_closes']) ?>"><?= ce($errors, 'registration_closes') ?></label>
   </div>

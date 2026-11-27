@@ -72,8 +72,24 @@
       totalEl.textContent = fmt(total);
       countEl.textContent = count;
     };
-    campForm.addEventListener('change', recalc);
+    // "All Camps": tick/untick every camp the player is eligible for
+    var all = campForm.querySelector('[data-select-all]');
+    var boxes = function () { return campForm.querySelectorAll('input[name="camps[]"]:not(:disabled)'); };
+    var syncAll = function () {
+      if (!all) return;
+      var b = boxes(), n = 0;
+      b.forEach(function (cb) { if (cb.checked) n++; });
+      all.checked = b.length > 0 && n === b.length;
+      all.indeterminate = n > 0 && n < b.length;
+    };
+    if (all) {
+      all.addEventListener('change', function () {
+        boxes().forEach(function (cb) { cb.checked = all.checked; });
+      });
+    }
+    campForm.addEventListener('change', function () { recalc(); syncAll(); });
     recalc();
+    syncAll();
   }
   // Email templates / compose: click a placeholder to insert it where the cursor was
   var lastField = null;
@@ -125,6 +141,8 @@
       notify.querySelectorAll('[data-notify-label]').forEach(function (l) {
         l.hidden = l.getAttribute('data-notify-label') !== val;
       });
+      var rej = form.querySelector('[data-reject-only]');
+      if (rej) rej.hidden = val !== 'rejected';
     };
     form.addEventListener('change', syncNotify);
     syncNotify();

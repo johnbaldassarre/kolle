@@ -4,13 +4,14 @@
  *   Step 1  Account       name, email, birthdate, password
  *   Step 2  Player info   adult?  -> parent/guardian info if under 18, last level of hockey played
  *   Step 3  Profile link  Elite Prospects or league player profile (for admin verification)
- *   Step 4  Camps         choose one or more camps, live total
- *   Step 5  Checkout      review + demo payment
+ *   Step 4  Waiver        read and sign (parent/guardian signs for players under 18)
+ *   Step 5  Camps         choose one or more camps (or all eligible), live total
+ *   Step 6  Checkout      review + demo payment
  */
 require __DIR__ . '/includes/bootstrap.php';
 
-$steps = [1 => 'Account', 2 => 'Player Info', 3 => 'Player Profile', 4 => 'Select Camps', 5 => 'Checkout'];
-$step  = max(1, min(5, (int)($_GET['step'] ?? 0)));
+$steps = [1 => 'Account', 2 => 'Player Info', 3 => 'Player Profile', 4 => 'Waiver', 5 => 'Select Camps', 6 => 'Checkout'];
+$step  = max(1, min(6, (int)($_GET['step'] ?? 0)));
 $user  = current_user();
 $errors = [];
 
@@ -35,13 +36,20 @@ if ($user) {
     }
     $maxStep = max(2, (int)$player['wizard_step']);
     if (!isset($_GET['step'])) {
-        $step = min($maxStep, 4);
+        $step = min($maxStep, 5);
     }
     if ($step === 1) {
         $step = 2;
     }
     if ($step > $maxStep) {
         redirect('register.php?step=' . $maxStep);
+    }
+    // Camps and checkout need a signed copy of the current waiver.
+    if ($step >= 5 && !has_current_waiver((int)$user['id'])) {
+        if (latest_waiver((int)$user['id'])) {
+            flash('info', 'Our waiver has been updated. Please review and sign the new version to continue.');
+        }
+        redirect('register.php?step=4');
     }
 } else {
     $maxStep = 1;
@@ -50,6 +58,10 @@ if ($user) {
         redirect('register.php?step=1');
     }
 }
+
+// Players whose registration was rejected can't buy camps until an admin reviews them again.
+$rejected = $player && ($player['verification_status'] ?? '') === 'rejected';
+$playerRank = $user ? player_level_rank((int)$user['id']) : null;
 
 function advance_wizard(int $userId, int $toStep): void
 {
@@ -177,7 +189,7 @@ if (is_post()) {
                 $data['position'], $data['shoots'], $user['id'],
             ]);
             // Changing the claimed level after verification sends the player back to review.
-            if (($old['level_id'] ?? null) && (int)$old['level_id'] !== $data['level_id'] && ($old['verification_status'] ?? '') !== 'pending') {
+            if (($old['level_id'] ?? null) && (int)$old['level_id'] !== $data['level_id'] && in_array($old['verification_status'] ?? '', ['verified', 'flagged'], true)) {
                 db()->prepare('UPDATE players SET verification_status = "pending", verified_at = NULL, verified_by = NULL WHERE user_id = ?')
                     ->execute([$user['id']]);
             }
@@ -218,22 +230,51 @@ if (is_post()) {
                 ->execute([$source, $link ?: null, $reason ?: null, $user['id']]);
             if ($changed) {
                 db()->prepare('UPDATE players SET verification_status = "pending", auto_check_result = NULL, auto_check_score = NULL,
-                               auto_checked_at = NULL, verified_at = NULL, verified_by = NULL WHERE user_id = ?')->execute([$user['id']]);
+                               auto_checked_at = NULL, verified_at = NULL, verified_by = NULL WHERE user_id = ? AND verification_status <> "rejected"')->execute([$user['id']]);
             }
             advance_wizard((int)$user['id'], 4);
             redirect('register.php?step=4');
         }
     }
 
-    // STEP 4: camp selection ------------------------------------------------
+    // STEP 4: waiver --------------------------------------------------------
     if ($step === 4) {
+        $minor    = !(int)($player['is_adult'] ?? 0);
+        $expected = $minor ? trim(($player['parent_first_name'] ?? '') . ' ' . ($player['parent_last_name'] ?? '')) : $user['first_name'] . ' ' . $user['last_name'];
+        $signer   = trim(preg_replace('/\s+/', ' ', (string)($_POST['signer_name'] ?? '')));
+
+        if (empty($_POST['agree'])) {
+            $errors['agree'] = 'Please tick the box to confirm you have read and agree to the waiver.';
+        }
+        if ($signer === '') {
+            $errors['signer_name'] = 'Type your full name to sign.';
+        } elseif (normalize_name($signer) !== normalize_name($expected)) {
+            $errors['signer_name'] = $minor
+                ? "The waiver must be signed by the parent/guardian on file ($expected). Type their full name exactly, or go back to Player Info to change the parent/guardian."
+                : "Type your full name exactly as registered ($expected).";
+        }
+        if (!$errors) {
+            db()->prepare('INSERT INTO waivers (user_id, waiver_version, signer_name, signer_relationship, waiver_text, ip, user_agent) VALUES (?, ?, ?, ?, ?, ?, ?)')
+                ->execute([$user['id'], waiver_version(), $signer, $minor ? ($player['parent_relationship'] ?: 'Parent/Guardian') : 'Self',
+                           setting('waiver_text'), substr($_SERVER['REMOTE_ADDR'] ?? '', 0, 45), substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255)]);
+            advance_wizard((int)$user['id'], 5);
+            flash('success', 'Waiver signed. Now choose your camps.');
+            redirect('register.php?step=5');
+        }
+    }
+
+    // STEP 5: camp selection ------------------------------------------------
+    if ($step === 5 && $rejected) {
+        redirect('register.php?step=5');
+    }
+    if ($step === 5) {
         $chosen  = array_unique(array_map('intval', (array)($_POST['camps'] ?? [])));
         $camps   = camps_with_counts();
         $already = user_camp_ids((int)$user['id']);
         $valid   = [];
         foreach ($camps as $c) {
             if (in_array((int)$c['id'], $chosen, true)) {
-                if ($why = camp_block_reason($c, $user['birthdate'], $already)) {
+                if ($why = camp_block_reason($c, $user['birthdate'], $already, $playerRank)) {
                     $errors['camps'] = $c['name'] . ': ' . $why . '.';
                 } else {
                     $valid[] = (int)$c['id'];
@@ -245,20 +286,19 @@ if (is_post()) {
         }
         if (!$errors) {
             $_SESSION['cart'] = $valid;
-            advance_wizard((int)$user['id'], 5);
-            redirect('register.php?step=5');
+            advance_wizard((int)$user['id'], 6);
+            redirect('register.php?step=6');
         }
     }
 
-    // STEP 5: checkout ------------------------------------------------------
-    if ($step === 5) {
+    // STEP 6: checkout ------------------------------------------------------
+    if ($step === 6) {
         $cart = $_SESSION['cart'] ?? [];
         $billing = trim($_POST['billing_name'] ?? '');
-        if (!$cart) {
-            redirect('register.php?step=4');
+        if (!$cart || $rejected) {
+            redirect('register.php?step=5');
         }
         if ($billing === '') $errors['billing_name'] = 'Enter the name of the person paying.';
-        if (empty($_POST['waiver'])) $errors['waiver'] = 'You must accept the waiver to register.';
 
         if (!$errors) {
             $pdo = db();
@@ -266,14 +306,16 @@ if (is_post()) {
                 $pdo->beginTransaction();
                 // Lock the chosen camps so two people cannot take the last spot at once.
                 $in   = implode(',', array_fill(0, count($cart), '?'));
-                $stmt = $pdo->prepare("SELECT c.*, (SELECT COUNT(*) FROM registrations r WHERE r.camp_id = c.id AND r.status = 'active') AS registered
-                                       FROM camps c WHERE c.id IN ($in) AND c.is_active = 1 FOR UPDATE");
+                $stmt = $pdo->prepare("SELECT c.*, (SELECT COUNT(*) FROM registrations r WHERE r.camp_id = c.id AND r.status = 'active') AS registered,
+                                              ml.name AS min_level_name, ml.rank_value AS min_level_rank
+                                       FROM camps c LEFT JOIN levels ml ON ml.id = c.min_level_id
+                                       WHERE c.id IN ($in) AND c.is_active = 1 FOR UPDATE");
                 $stmt->execute($cart);
                 $camps   = $stmt->fetchAll();
                 $already = user_camp_ids((int)$user['id']);
                 $total   = 0.0;
                 foreach ($camps as $c) {
-                    if ($why = camp_block_reason($c, $user['birthdate'], $already)) {
+                    if ($why = camp_block_reason($c, $user['birthdate'], $already, $playerRank)) {
                         throw new RuntimeException($c['name'] . ': ' . $why);
                     }
                     $total += (float)$c['price'];
@@ -297,7 +339,7 @@ if (is_post()) {
             } catch (RuntimeException $ex) {
                 $pdo->rollBack();
                 flash('error', $ex->getMessage() . ' Please update your selection.');
-                redirect('register.php?step=4');
+                redirect('register.php?step=5');
             }
         }
     }
@@ -502,15 +544,82 @@ require __DIR__ . '/includes/header.php';
   </form>
 
 <?php elseif ($step === 4):
+    $minor    = !(int)($player['is_adult'] ?? 0);
+    $expected = $minor ? trim(($player['parent_first_name'] ?? '') . ' ' . ($player['parent_last_name'] ?? '')) : $user['first_name'] . ' ' . $user['last_name'];
+    $signed   = latest_waiver((int)$user['id']);
+    $current  = $signed && (int)$signed['waiver_version'] >= waiver_version();
+?>
+  <form method="post" class="card waiver-card" novalidate>
+    <?= csrf_field() ?>
+    <h2>Waiver &amp; release</h2>
+    <?php if ($current): ?>
+      <div class="alert alert-success">Signed by <strong><?= e($signed['signer_name']) ?></strong> on <?= e(fmt_date($signed['signed_at'], 'M j, Y \a\t g:i a')) ?>. You're all set &mdash; <a href="<?= e(url('register.php?step=5')) ?>">continue to camp selection</a>.</div>
+    <?php elseif ($signed): ?>
+      <div class="alert alert-info">The waiver has been updated since you last signed it. Please review and sign the new version.</div>
+    <?php endif; ?>
+    <p class="muted">Please read the full waiver below<?= $minor ? '. Because the player is under 18, it must be signed by the <strong>parent or legal guardian</strong>.' : '.' ?></p>
+    <div class="waiver-text" tabindex="0" aria-label="Waiver text"><?= nl2br(e(setting('waiver_text'))) ?></div>
+
+    <?php if (!$current): ?>
+    <div class="waiver-sign">
+      <dl class="details">
+        <dt>Participant</dt><dd><?= e($user['first_name'] . ' ' . $user['last_name']) ?> (born <?= e(fmt_date($user['birthdate'])) ?>)</dd>
+        <dt>Signed by</dt><dd><?= $minor ? e($expected) . ' &middot; ' . e($player['parent_relationship'] ?: 'Parent/Guardian') : 'Participant (adult)' ?></dd>
+        <dt>Date</dt><dd><?= e(date('M j, Y')) ?></dd>
+      </dl>
+      <label class="checkbox"><input type="checkbox" name="agree" value="1"<?= checked(!empty($_POST['agree'])) ?>>
+        <span>I have read and understand this waiver and agree to its terms<?= $minor ? ' on behalf of the participant, as their parent/legal guardian' : '' ?>.</span></label>
+      <?= err($errors, 'agree') ?>
+      <label>Type your full name to sign<?= $minor ? ' (parent/guardian)' : '' ?>
+        <input name="signer_name" class="signature" value="<?= old('signer_name') ?>" placeholder="<?= e($expected) ?>" autocomplete="name">
+        <span class="hint">Typing your name here is your electronic signature.</span>
+        <?= err($errors, 'signer_name') ?>
+      </label>
+    </div>
+    <?php endif; ?>
+
+    <div class="form-actions">
+      <a class="btn btn-ghost" href="<?= e(url('register.php?step=3')) ?>">&larr; Back</a>
+      <?php if ($current): ?>
+        <a class="btn btn-primary" href="<?= e(url('register.php?step=5')) ?>">Continue &rarr;</a>
+      <?php else: ?>
+        <button class="btn btn-primary">Sign &amp; continue &rarr;</button>
+      <?php endif; ?>
+    </div>
+  </form>
+
+<?php elseif ($step === 5 && $rejected): ?>
+  <div class="card">
+    <h2>Registration not accepted</h2>
+    <p>After reviewing the player profile, our staff were unable to accept this registration, so new camp registrations are not available on this account.</p>
+    <?php if (!empty($player['verification_note'])): ?><p class="muted"><?= e($player['verification_note']) ?></p><?php endif; ?>
+    <p>If you have more information about the player's level of play, please contact us at <a href="mailto:<?= e(setting('contact_email')) ?>"><?= e(setting('contact_email')) ?></a>.</p>
+    <a class="btn btn-ghost" href="<?= e(url('account.php')) ?>">Go to My Account</a>
+  </div>
+
+<?php elseif ($step === 5):
     $camps   = camps_with_counts();
     $already = user_camp_ids((int)$user['id']);
     $picked  = is_post() ? array_map('intval', (array)($_POST['camps'] ?? [])) : ($_SESSION['cart'] ?? []);
+    $eligible = array_values(array_filter($camps, fn($c) => camp_block_reason($c, $user['birthdate'], $already, $playerRank) === null));
+    $eligibleTotal = array_sum(array_map(fn($c) => (float)$c['price'], $eligible));
+    $stmt = db()->prepare('SELECT name FROM levels WHERE id = ?');
+    $stmt->execute([$player['level_id'] ?? 0]);
+    $levelName = $stmt->fetchColumn();
 ?>
   <form method="post" class="card" data-camp-form data-currency="<?= e(setting('currency_symbol', '$')) ?>">
     <?= csrf_field() ?>
     <h2>Select your camps</h2>
-    <p class="muted">Choose as many camps as you like. Camps outside your age group, full, or already registered are greyed out.</p>
+    <p class="muted">Choose as many camps as you like. Camps outside your age group or level of play<?= $levelName ? ' (<strong>' . e($levelName) . '</strong>)' : '' ?>, full, or already registered are greyed out.</p>
     <?= err($errors, 'camps') ?>
+
+    <?php if (count($eligible) > 1): ?>
+      <label class="all-camps">
+        <input type="checkbox" data-select-all<?= checked(count(array_intersect(array_column($eligible, 'id'), $picked)) === count($eligible)) ?>>
+        <span><strong>All Camps</strong> &mdash; select every camp you're eligible for
+          <small><?= count($eligible) ?> camps &middot; <?= money($eligibleTotal) ?></small></span>
+      </label>
+    <?php endif; ?>
 
     <?php if (!$camps): ?>
       <p>No camps are open for registration right now. Please check back soon.</p>
@@ -518,7 +627,7 @@ require __DIR__ . '/includes/header.php';
 
     <div class="camp-grid">
       <?php foreach ($camps as $c):
-          $why = camp_block_reason($c, $user['birthdate'], $already);
+          $why = camp_block_reason($c, $user['birthdate'], $already, $playerRank);
           $left = $c['capacity'] !== null ? max(0, (int)$c['capacity'] - (int)$c['registered']) : null; ?>
         <label class="camp-option<?= $why ? ' disabled' : '' ?>">
           <input type="checkbox" name="camps[]" value="<?= (int)$c['id'] ?>" data-price="<?= e($c['price']) ?>"
@@ -533,6 +642,7 @@ require __DIR__ . '/includes/header.php';
             <?php if ($c['description']): ?><span class="camp-desc"><?= e($c['description']) ?></span><?php endif; ?>
             <span class="camp-tags">
               <span class="tag"><?= e(birth_years_label($c['min_birth_year'] ? (int)$c['min_birth_year'] : null, $c['max_birth_year'] ? (int)$c['max_birth_year'] : null)) ?></span>
+              <?php if (camp_level_label($c) && !$why): ?><span class="tag"><?= e(camp_level_label($c)) ?></span><?php endif; ?>
               <?php if ($why): ?><span class="tag tag-warn"><?= e($why) ?></span>
               <?php elseif ($left !== null && $left <= 5): ?><span class="tag tag-hot"><?= $left ?> spot<?= $left === 1 ? '' : 's' ?> left</span><?php endif; ?>
             </span>
@@ -548,14 +658,14 @@ require __DIR__ . '/includes/header.php';
       <button class="btn btn-primary">Continue to checkout &rarr;</button>
     </div>
     <div class="form-actions">
-      <a class="btn btn-ghost" href="<?= e(url('register.php?step=3')) ?>">&larr; Back</a>
+      <a class="btn btn-ghost" href="<?= e(url('register.php?step=4')) ?>">&larr; Back</a>
     </div>
   </form>
 
-<?php elseif ($step === 5):
+<?php elseif ($step === 6):
     $cart = $_SESSION['cart'] ?? [];
     if (!$cart) {
-        echo '<div class="card"><p>Your cart is empty.</p><a class="btn btn-primary" href="' . e(url('register.php?step=4')) . '">Choose camps</a></div>';
+        echo '<div class="card"><p>Your cart is empty.</p><a class="btn btn-primary" href="' . e(url('register.php?step=5')) . '">Choose camps</a></div>';
     } else {
         $in = implode(',', array_fill(0, count($cart), '?'));
         $stmt = db()->prepare("SELECT * FROM camps WHERE id IN ($in) ORDER BY sort_order, start_date");
@@ -577,7 +687,7 @@ require __DIR__ . '/includes/header.php';
         </tbody>
         <tfoot><tr><th colspan="2">Total (<?= e(setting('currency_code', 'CAD')) ?>)</th><th class="num"><?= money($total) ?></th></tr></tfoot>
       </table>
-      <p><a href="<?= e(url('register.php?step=4')) ?>">Change selection</a></p>
+      <p><a href="<?= e(url('register.php?step=5')) ?>">Change selection</a></p>
       <h3>Player</h3>
       <p><?= e($user['first_name'] . ' ' . $user['last_name']) ?> &middot; born <?= e(fmt_date($user['birthdate'])) ?><br>
         <?php if (!$player['is_adult']): ?>Parent/guardian: <?= e($player['parent_first_name'] . ' ' . $player['parent_last_name']) ?> (<?= e($player['parent_email']) ?>)<?php endif; ?></p>
@@ -596,9 +706,8 @@ require __DIR__ . '/includes/header.php';
           <label>CVC<input value="123" disabled></label>
         </div>
       </div>
-      <label class="checkbox"><input type="checkbox" name="waiver" value="1"<?= checked(!empty($_POST['waiver'])) ?>>
-        <span><?= e(setting('waiver_text')) ?><?= !$player['is_adult'] ? ' I am the parent/legal guardian of the player named above.' : '' ?></span></label>
-      <?= err($errors, 'waiver') ?>
+      <?php $w = latest_waiver((int)$user['id']); ?>
+      <p class="waiver-ok">&#10003; Waiver signed by <?= e($w['signer_name']) ?> on <?= e(fmt_date($w['signed_at'])) ?></p>
       <button class="btn btn-primary btn-block">Complete registration &middot; <?= money($total) ?></button>
     </div>
   </form>

@@ -54,7 +54,7 @@ $qs = fn(array $over) => e(url('admin/roster.php?' . http_build_query(array_merg
     <?php if (!$rows): ?><p class="muted">No players registered.</p><?php else: ?>
     <table class="table roster-table">
       <thead><tr>
-        <th class="num">#</th><th>Player</th><th>Born</th><th>Pos</th><th>Level / team</th><th>Verified</th>
+        <th class="num">#</th><th>Player</th><th>Born</th><th>Pos</th><th>Level / team</th><th>Verified</th><th>Waiver</th>
         <?php if ($contacts): ?><th>Contact</th><?php endif; ?>
         <th class="print-only att">Att.</th>
       </tr></thead>
@@ -67,6 +67,7 @@ $qs = fn(array $over) => e(url('admin/roster.php?' . http_build_query(array_merg
           <td><?= e(substr((string)$r['position'], 0, 1)) ?><?= $r['shoots'] ? '/' . e($r['shoots']) : '' ?></td>
           <td><?= e($r['level_name'] ?? '—') ?><br><small class="muted"><?= e(trim($r['league_name'] . ($r['team_name'] ? ' · ' . $r['team_name'] : ''))) ?></small></td>
           <td><?= verification_badge($r['verification_status']) ?></td>
+          <td><?= $r['waiver_signed_at'] ? '&#10003; <small class="muted">' . e(fmt_date($r['waiver_signed_at'], 'M j')) . '</small>' : '<span class="tag tag-warn">Missing</span>' ?></td>
           <?php if ($contacts): ?>
             <td><small><?php if (!$r['is_adult'] && $r['parent_first_name']): ?>
               <?= e($r['parent_first_name'] . ' ' . $r['parent_last_name']) ?> (<?= e($r['parent_relationship']) ?>)<br><?= e($r['parent_phone']) ?> · <?= e($r['parent_email']) ?>

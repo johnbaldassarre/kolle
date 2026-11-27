@@ -55,14 +55,37 @@ if (is_post()) {
                     ? ' "' . $tpl['name'] . '" email ' . ($res['status'] === 'logged' ? 'recorded (log-only mode).' : 'sent.')
                     : ' The email could not be sent: ' . $res['error'];
             }
+            // Rejected players lose their camp spots (after the denied email, so it can list the camps).
+            if ($status === 'rejected' && !empty($_POST['cancel_regs'])) {
+                $stmt = db()->prepare('SELECT COUNT(*) AS n, COALESCE(SUM(price), 0) AS total FROM registrations WHERE user_id = ? AND status = "active"');
+                $stmt->execute([$id]);
+                $c = $stmt->fetch();
+                if ((int)$c['n'] > 0) {
+                    db()->prepare('UPDATE registrations SET status = "cancelled" WHERE user_id = ? AND status = "active"')->execute([$id]);
+                    $msg .= ' Cancelled ' . (int)$c['n'] . ' camp registration(s); those spots are open again. Refund due: ' . money($c['total']) . '.';
+                }
+            }
             flash(isset($res) && !$res['ok'] ? 'error' : 'success', $msg);
         }
     } elseif ($action === 'cancel_reg') {
         db()->prepare('UPDATE registrations SET status = "cancelled" WHERE id = ? AND user_id = ?')->execute([(int)$_POST['reg_id'], $id]);
         flash('success', 'Registration cancelled. The spot is open again.');
     } elseif ($action === 'restore_reg') {
-        db()->prepare('UPDATE registrations SET status = "active" WHERE id = ? AND user_id = ?')->execute([(int)$_POST['reg_id'], $id]);
-        flash('success', 'Registration restored.');
+        $stmt = db()->prepare('SELECT c.capacity, (SELECT COUNT(*) FROM registrations x WHERE x.camp_id = c.id AND x.status = "active") AS registered,
+                                      (SELECT COUNT(*) FROM registrations y WHERE y.user_id = r.user_id AND y.camp_id = r.camp_id AND y.status = "active") AS dup
+                               FROM registrations r JOIN camps c ON c.id = r.camp_id WHERE r.id = ? AND r.user_id = ?');
+        $stmt->execute([(int)$_POST['reg_id'], $id]);
+        $c = $stmt->fetch();
+        if (!$c) {
+            flash('error', 'Registration not found.');
+        } elseif ((int)$c['dup'] > 0) {
+            flash('error', 'The player is already registered for this camp.');
+        } elseif ($c['capacity'] !== null && (int)$c['registered'] >= (int)$c['capacity']) {
+            flash('error', 'That camp is full, so the registration cannot be restored.');
+        } else {
+            db()->prepare('UPDATE registrations SET status = "active" WHERE id = ? AND user_id = ?')->execute([(int)$_POST['reg_id'], $id]);
+            flash('success', 'Registration restored.');
+        }
     } elseif ($action === 'set_password') {
         $pw = (string)($_POST['new_password'] ?? '');
         if ($prob = password_problem($pw)) {
@@ -202,6 +225,10 @@ require __DIR__ . '/../includes/header.php';
       <span data-notify-label="verified">Email the player the <strong>Registration accepted</strong> message<?= !$p['is_adult'] && $p['parent_email'] ? ' (cc parent/guardian)' : '' ?></span>
       <span data-notify-label="rejected">Email the player the <strong>Registration denied</strong> message<?= !$p['is_adult'] && $p['parent_email'] ? ' (cc parent/guardian)' : '' ?></span>
       <a href="<?= e(url('admin/emails.php')) ?>" class="small-link">edit wording</a></label>
+    <?php $activeRegs = count(array_filter($regs, fn($r) => $r['status'] === 'active')); ?>
+    <label class="checkbox notify-box" data-reject-only hidden><input type="checkbox" name="cancel_regs" value="1" checked>
+      <span>Cancel this player's <?= $activeRegs ?> camp registration(s) and free up the spots<?= $activeRegs ? '' : ' (none active)' ?>.
+        The player also won't be able to register for more camps unless you change their status.</span></label>
     <div class="form-actions">
       <span class="muted"><?php if ($p['verified_at']): ?>Last decision by <?= e($p['vb_first'] . ' ' . $p['vb_last']) ?> on <?= e(fmt_date($p['verified_at'], 'M j, Y g:i a')) ?><?php endif; ?></span>
       <button class="btn btn-primary">Save decision</button>
@@ -212,7 +239,7 @@ require __DIR__ . '/../includes/header.php';
 <div class="grid-2 cards">
   <div class="card">
     <h2>Camp registrations</h2>
-    <?php if (!$regs): ?><p class="muted">No registrations<?= (int)$p['wizard_step'] < 5 ? ' — the player stopped at step ' . (int)$p['wizard_step'] . ' of the wizard' : '' ?>.</p><?php else: ?>
+    <?php if (!$regs): ?><p class="muted">No registrations<?= (int)$p['wizard_step'] < 6 ? ' — the player stopped at step ' . (int)$p['wizard_step'] . ' of the wizard' : '' ?>.</p><?php else: ?>
     <table class="table">
       <thead><tr><th>Camp</th><th>Order</th><th class="num">Price</th><th></th></tr></thead>
       <tbody>
@@ -231,6 +258,20 @@ require __DIR__ . '/../includes/header.php';
       <?php endforeach; ?>
       </tbody>
     </table>
+    <?php endif; ?>
+  </div>
+  <div class="card">
+    <h2>Waiver</h2>
+    <?php $w = latest_waiver($id); ?>
+    <?php if (!$w): ?>
+      <p class="muted">Not signed yet.</p>
+    <?php else: ?>
+      <dl class="details">
+        <dt>Signed by</dt><dd><?= e($w['signer_name']) ?> (<?= e($w['signer_relationship']) ?>)</dd>
+        <dt>Date</dt><dd><?= e(fmt_date($w['signed_at'], 'M j, Y g:i a')) ?></dd>
+        <dt>Version</dt><dd><?= (int)$w['waiver_version'] ?><?= (int)$w['waiver_version'] < waiver_version() ? ' <span class="tag tag-warn">Outdated – must re-sign before adding camps</span>' : ' <span class="tag">Current</span>' ?></dd>
+      </dl>
+      <p><a href="<?= e(url('admin/waiver_view.php?id=' . $w['id'])) ?>">View signed waiver</a></p>
     <?php endif; ?>
   </div>
   <div class="card">

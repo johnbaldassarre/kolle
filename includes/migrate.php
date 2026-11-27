@@ -6,7 +6,7 @@
  */
 declare(strict_types=1);
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 function run_migrations(PDO $pdo): void
 {
@@ -61,6 +61,30 @@ function run_migrations(PDO $pdo): void
         }
         $pdo->prepare("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('site_url', ?)")
             ->execute([function_exists('request_origin') && isset($_SERVER['HTTP_HOST']) ? rtrim(request_origin() . base_url(), '/') . '/' : '']);
+    }
+
+    if ($current < 3) {
+        // ---- v3: waivers, minimum level per camp, waiver step in the wizard ----
+        if (!migrate_column_exists($pdo, 'camps', 'min_level_id')) {
+            $pdo->exec("ALTER TABLE camps ADD COLUMN min_level_id INT UNSIGNED NULL AFTER capacity,
+                        ADD CONSTRAINT fk_camps_min_level FOREIGN KEY (min_level_id) REFERENCES levels(id) ON DELETE SET NULL");
+        }
+        $pdo->exec("CREATE TABLE IF NOT EXISTS waivers (
+            id                  INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+            user_id             INT UNSIGNED NOT NULL,
+            waiver_version      INT          NOT NULL,
+            signer_name         VARCHAR(160) NOT NULL,
+            signer_relationship VARCHAR(40)  NOT NULL,
+            waiver_text         TEXT         NOT NULL,
+            ip                  VARCHAR(45)  NULL,
+            user_agent          VARCHAR(255) NULL,
+            signed_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_waivers_user (user_id, signed_at),
+            CONSTRAINT fk_waivers_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        $pdo->exec("INSERT IGNORE INTO settings (setting_key, setting_value) VALUES ('waiver_version', '1')");
+        // The wizard gained a Waiver step (4); Camps moved to 5 and Checkout to 6.
+        $pdo->exec('UPDATE players SET wizard_step = wizard_step + 1 WHERE wizard_step >= 5');
     }
 
     $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('schema_version', ?)
@@ -124,4 +148,11 @@ The link expires in 60 minutes and can only be used once. If you didn't ask to r
 {site_name}",
         ],
     ];
+}
+
+function migrate_column_exists(PDO $pdo, string $table, string $column): bool
+{
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?');
+    $stmt->execute([$table, $column]);
+    return (int)$stmt->fetchColumn() > 0;
 }

@@ -115,7 +115,7 @@ require __DIR__ . '/../includes/header.php';
         <td><?php if ($p['profile_url']): ?><a href="<?= e($p['profile_url']) ?>" target="_blank" rel="noopener noreferrer"><?= e(profile_source_label($p['profile_source'])) ?> &#8599;</a><?php else: ?><?= e(profile_source_label($p['profile_source'])) ?><?php endif; ?></td>
         <td><?php if ($p['auto_checked_at']): ?><span class="score score-<?= $p['auto_check_score'] >= 70 ? 'hi' : ($p['auto_check_score'] >= 40 ? 'mid' : 'lo') ?>"><?= (int)$p['auto_check_score'] ?></span><?php else: ?><span class="muted">—</span><?php endif; ?></td>
         <td><?= verification_badge($p['verification_status']) ?></td>
-        <td><?php if ($p['camp_names']): foreach (explode('||', $p['camp_names']) as $cn): ?><span class="tag"><?= e($cn) ?></span> <?php endforeach; else: ?><span class="muted"><?= (int)$p['wizard_step'] < 5 ? 'Incomplete (step ' . (int)$p['wizard_step'] . ')' : 'None' ?></span><?php endif; ?></td>
+        <td><?php if ($p['camp_names']): foreach (explode('||', $p['camp_names']) as $cn): ?><span class="tag"><?= e($cn) ?></span> <?php endforeach; else: ?><span class="muted"><?= (int)$p['wizard_step'] < 6 ? 'Incomplete (step ' . (int)$p['wizard_step'] . ')' : 'None' ?></span><?php endif; ?></td>
       </tr>
     <?php endforeach; ?>
     </tbody>
